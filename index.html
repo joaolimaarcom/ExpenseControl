@@ -3,19 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1B2432">
+<meta name="theme-color" content="#171410">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="apple-touch-icon" href="./icone-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Public+Sans:wght@400;500;600;700&display=swap">
 <title>Painel</title>
 <style>
   :root{
-    --ink:#1B2432; --ink-2:#232E40; --ink-3:#2C3950; --line:#39465E;
-    --paper:#EDEAE3; --muted:#94A0B5;
-    --in:#4FB286; --out:#DB4F63; --due:#E9C46A; --credito:#C77DFF;
-    --serif: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --ink:oklch(0.19 0.02 55); --ink-2:oklch(0.225 0.02 55); --ink-3:oklch(0.26 0.02 55); --line:oklch(0.32 0.02 55);
+    --paper:oklch(0.95 0.01 70); --muted:oklch(0.64 0.02 60);
+    --in:oklch(0.72 0.10 152); --out:oklch(0.63 0.14 27); --due:#B48DE0; --credito:#D9A84E;
+    --serif: 'Instrument Serif', ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+    --sans: 'Public Sans', system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --pad:16px;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -29,7 +32,7 @@
 
   header{display:flex;align-items:center;gap:8px;padding:calc(12px + env(safe-area-inset-top)) var(--pad) 12px;
     border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;background:var(--ink)}
-  .mes{font-size:17px;font-weight:600;text-transform:capitalize;white-space:nowrap}
+  .mes{font-size:17px;font-weight:600;white-space:nowrap}
   .mes small{display:block;font-weight:400;font-size:12px;color:var(--muted);text-transform:none}
   .navbtn{width:34px;height:34px;flex:0 0 34px;border:1px solid var(--line);border-radius:10px;display:grid;place-items:center;color:var(--muted)}
   .spacer{flex:1}
@@ -40,30 +43,30 @@
   section[hidden]{display:none}
   h2{font-size:12px;font-weight:600;color:var(--muted);margin:26px 0 10px}
   h2:first-child{margin-top:0}
-  .aviso{border:1px solid var(--out);border-left-width:3px;border-radius:10px;padding:11px 13px;font-size:13.5px;color:#FFD9DD;margin:14px 0;line-height:1.5}
-  .aviso.ok{border-color:var(--in);color:#CBEDDD}
-  .aviso.atencao{border-color:var(--due);color:#F6E7BD}
+  .aviso{border-top:1.5px solid var(--out);border-bottom:1px solid var(--line);padding:13px 2px;font-size:13.5px;color:var(--paper);margin:16px 0;line-height:1.55}
+  .aviso.ok{border-top-color:var(--in)}
+  .aviso.atencao{border-top-color:var(--due)}
 
   .hero .label{font-size:13px;color:var(--muted)}
   .hero .big{font-family:var(--serif);font-size:clamp(38px,13vw,54px);line-height:1;margin:6px 0 2px;font-variant-numeric:tabular-nums}
   .hero .big.neg{color:var(--out)} .hero .big.zero{color:var(--in)}
   .hero .sub{font-size:13px;color:var(--muted)}
 
-  .gauge{height:12px;border-radius:99px;background:var(--ink-3);margin:16px 0 10px;overflow:hidden;display:flex}
+  .gauge{height:3px;border-radius:99px;background:var(--ink-3);margin:18px 0 10px;overflow:hidden;display:flex}
   .gauge i{display:block;height:100%}
   .gauge i.usado{background:var(--credito)} .gauge i.reservado{background:var(--credito);opacity:.35}
   .gauge.fds i.usado{background:var(--out)} .gauge.fds i.reservado{background:var(--in);opacity:.5}
 
-  .kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
-  .kpi{border:1px solid var(--line);border-radius:13px;padding:12px}
+  .kpis{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);margin-top:16px}
+  .kpi{background:var(--ink);padding:14px 16px}
   .kpi .k{font-size:12px;color:var(--muted);margin-bottom:4px}
   .kpi .v{font-family:var(--serif);font-variant-numeric:tabular-nums;font-size:21px;line-height:1.1}
   .kpi .v.neg{color:var(--out)} .kpi .n{font-size:11.5px;color:var(--muted);margin-top:3px}
 
-  .contas{border:1px solid var(--line);border-radius:13px;overflow:hidden}
-  .conta{display:flex;justify-content:space-between;gap:12px;padding:11px 13px;border-bottom:1px solid var(--ink-3);font-size:14px}
+  .contas{border-top:1px solid var(--line)}
+  .conta{display:flex;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--ink-3);font-size:14px}
   .conta:last-child{border-bottom:0}
-  .conta.total{background:var(--ink-2);font-weight:600}
+  .conta.total{font-weight:600;border-top:1px solid var(--line);border-bottom:0;margin-top:4px;padding-top:16px}
   .conta .cv{font-family:var(--serif);font-variant-numeric:tabular-nums;white-space:nowrap}
   .conta .cv.neg{color:var(--out)} .conta .cv.pos{color:var(--in)}
   .conta small{display:block;color:var(--muted);font-weight:400;font-size:11.5px}
@@ -98,18 +101,19 @@
   .vazio b{color:var(--paper);font-weight:500}
 
   .barra{position:fixed;left:0;right:0;bottom:0;z-index:30;
-    background:linear-gradient(to bottom,rgba(27,36,50,.85),var(--ink) 22%);
+    background:linear-gradient(to bottom,oklch(0.19 0.02 55 / 0),var(--ink) 30%);
     padding:10px var(--pad) calc(8px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
   .campo{display:flex;gap:8px;align-items:flex-end}
   .campo textarea{flex:1;background:var(--ink-2);border:1px solid var(--line);color:var(--paper);
     border-radius:14px;padding:11px 13px;resize:none;max-height:110px;line-height:1.35}
   .campo textarea::placeholder{color:var(--muted)}
-  .enviar{width:44px;height:44px;flex:0 0 44px;border-radius:14px;background:var(--paper);color:var(--ink);display:grid;place-items:center;font-weight:700}
+  .enviar{width:44px;height:44px;flex:0 0 44px;border-radius:14px;background:var(--credito);color:var(--ink);display:grid;place-items:center;font-weight:700}
   .enviar:disabled{opacity:.4}
-  .tabs{display:flex;gap:6px;margin-top:10px}
-  .tabs button{flex:1;padding:9px 4px;border-radius:11px;font-size:13px;color:var(--muted);border:1px solid transparent}
-  .tabs button[aria-current="true"]{background:var(--ink-2);color:var(--paper);border-color:var(--line)}
+  .tabs{display:flex;gap:22px;margin-top:16px;padding:0 4px}
+  .tabs button{flex:0 0 auto;padding:0 0 8px;font-size:13px;color:var(--muted);border:0;border-bottom:1.5px solid transparent}
+  .tabs button[aria-current="true"]{color:var(--paper);font-weight:600;border-color:var(--credito)}
   .tabs .bolha{display:inline-block;min-width:17px;padding:0 4px;margin-left:5px;background:var(--due);color:var(--ink);border-radius:99px;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+  .tabs .bolha[hidden]{display:none}
 
   .log{max-height:42vh;overflow-y:auto;margin:0 0 10px;display:flex;flex-direction:column;gap:8px}
   .log[hidden]{display:none}
@@ -126,19 +130,21 @@
   .modal{position:fixed;inset:0;z-index:60;background:rgba(15,20,28,.72);display:grid;place-items:end center;overflow-y:auto}
   .modal[hidden]{display:none}
   .folha{width:100%;max-width:520px;background:var(--ink-2);border:1px solid var(--line);border-bottom:0;
-    border-radius:20px 20px 0 0;padding:18px var(--pad) calc(18px + env(safe-area-inset-bottom))}
+    border-radius:22px 22px 0 0;padding:18px var(--pad) calc(18px + env(safe-area-inset-bottom))}
   .folha h3{margin:0 0 14px;font-size:16px;font-weight:600}
   .linha{display:flex;gap:10px;margin-bottom:10px}
   .fld{flex:1;display:flex;flex-direction:column;gap:5px;min-width:0}
   .fld label{font-size:12px;color:var(--muted)}
   .fld input,.fld select{background:var(--ink);border:1px solid var(--line);color:var(--paper);border-radius:11px;padding:10px 11px;width:100%}
-  .seg{display:flex;gap:6px;margin-bottom:12px}
-  .seg button{flex:1;padding:10px;border:1px solid var(--line);border-radius:11px;font-size:14px;color:var(--muted)}
-  .seg button[aria-pressed="true"]{background:var(--ink-3);color:var(--paper)}
+  .fld input[type="color"]{padding:4px;height:40px;cursor:pointer}
+  .seg{display:flex;gap:3px;margin-bottom:12px;border:1px solid var(--line);border-radius:12px;padding:3px}
+  .seg button{flex:1;padding:9px;border-radius:9px;font-size:13.5px;color:var(--muted)}
+  .seg button[aria-pressed="true"]{background:var(--credito);color:var(--ink)}
   .acoes{display:flex;gap:10px;margin-top:6px}
-  .acoes .prim{flex:1;background:var(--paper);color:var(--ink);border-radius:12px;padding:12px;font-weight:600}
+  .acoes .prim{flex:1;background:var(--credito);color:var(--ink);border-radius:12px;padding:12px;font-weight:600}
   .acoes .sec{border:1px solid var(--line);border-radius:12px;padding:12px 16px;color:var(--muted)}
   .fixa{display:flex;gap:8px;margin-bottom:8px}
+  .fixa input{background:var(--ink);border:1px solid var(--line);color:var(--paper);border-radius:11px;padding:9px 10px}
   .fixa input:first-child{flex:1} .fixa input:nth-child(2){width:100px}
   .fixa button{color:var(--muted);padding:0 6px}
   .addfixa{font-size:13px;color:var(--due);padding:4px 0}
@@ -285,6 +291,10 @@
       <div class="fld"><label for="cSexta">Sexta conta como FDS</label>
         <select id="cSexta"><option value="nao">Não</option><option value="sim">Sim</option></select></div>
     </div>
+    <div class="linha">
+      <div class="fld"><label for="cCorPrim">Cor primária</label><input id="cCorPrim" type="color"></div>
+      <div class="fld"><label for="cCorSec">Cor secundária</label><input id="cCorSec" type="color"></div>
+    </div>
     <label style="font-size:12px;color:var(--muted);display:block;margin:14px 0 8px">Já comprometido no próximo salário</label>
     <div id="cFixas"></div>
     <button class="addfixa" id="cAdd">+ adicionar item</button>
@@ -330,7 +340,8 @@ const CAT_DESPESA = ['Alimentação','iFood','Mercado','Transporte','Lazer','Nic
 const CAT_RECEITA = ['Salário','Freela','Reembolso','Rendimento','Outros'];
 const CFG_PADRAO = {
   salario: 2875, limite: 1350, tetoFds: 250, sextaNoFds: false, metodoPadrao: 'picpay',
-  comprometido: [ {nome:'Dívida', valor:255}, {nome:'Guardar', valor:300} ]
+  comprometido: [ {nome:'Dívida', valor:255}, {nome:'Guardar', valor:300} ],
+  corPrimaria: '#D9A84E', corSecundaria: '#B48DE0'
 };
 const CHAVE_LOCAL = 'painel:local';
 
@@ -415,22 +426,23 @@ let modo = 'indefinido';           // 'nuvem' | 'local'
 let db = null, auth = null, user = null, docRef = null, ignorarSnapshot = false;
 const elSinc = document.getElementById('sinc');
 const setSinc = (c,t) => { elSinc.className = 'sinc '+c; elSinc.title = t; };
+const tempoLimite = (p, ms) => Promise.race([p, new Promise((_,rej)=>setTimeout(()=>rej(new Error('tempo esgotado')), ms))]);
 
 async function iniciar(){
   const configurado = CONFIG.firebase.apiKey && !CONFIG.firebase.apiKey.startsWith('COLE');
   if(!configurado){ entrarLocal('Firebase não configurado — rodando só neste aparelho.'); return; }
   try{
-    const [{ initializeApp }, fbAuth, fbStore] = await Promise.all([
+    const [{ initializeApp }, fbAuth, fbStore] = await tempoLimite(Promise.all([
       import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
       import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js'),
       import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
-    ]);
+    ]), 6000);
     const app = initializeApp(CONFIG.firebase);
     auth = fbAuth.getAuth(app);
     db = fbStore.initializeFirestore(app, { localCache: fbStore.persistentLocalCache({ tabManager: fbStore.persistentSingleTabManager() }) });
     window._fb = { ...fbAuth, ...fbStore };
 
-    const redir = await fbAuth.getRedirectResult(auth).catch(()=>null);
+    const redir = await tempoLimite(fbAuth.getRedirectResult(auth), 6000).catch(()=>null);
     void redir;
 
     fbAuth.onAuthStateChanged(auth, async u => {
@@ -503,8 +515,14 @@ document.getElementById('cSair').onclick = async ()=>{
 };
 
 /* ===================== render ===================== */
+function aplicarTema(){
+  const raiz = document.documentElement.style;
+  raiz.setProperty('--credito', state.cfg.corPrimaria || CFG_PADRAO.corPrimaria);
+  raiz.setProperty('--due', state.cfg.corSecundaria || CFG_PADRAO.corSecundaria);
+}
 function render(){
-  document.getElementById('mesLabel').firstChild.nodeValue = nomeMes(mesRef);
+  aplicarTema();
+  document.getElementById('mesLabel').firstChild.nodeValue = nomeMes(mesRef).replace(/^./, c=>c.toUpperCase());
   document.getElementById('mesSub').textContent = mesRef === hojeISO().slice(0,7) ? 'mês atual' : '';
   renderHoje(); renderMes(); renderAgenda();
   const atrasadas = pendenciasAbertas().filter(p=>p.data <= hojeISO()).length;
@@ -719,6 +737,8 @@ function abrirCfg(){
   document.getElementById('cLimite').value = state.cfg.limite;
   document.getElementById('cTeto').value = state.cfg.tetoFds;
   document.getElementById('cSexta').value = state.cfg.sextaNoFds ? 'sim':'nao';
+  document.getElementById('cCorPrim').value = state.cfg.corPrimaria || CFG_PADRAO.corPrimaria;
+  document.getElementById('cCorSec').value = state.cfg.corSecundaria || CFG_PADRAO.corSecundaria;
   document.getElementById('cFixas').innerHTML = '';
   (state.cfg.comprometido||[]).forEach(c=>addFixa(c.nome, c.valor));
   document.getElementById('cConta').textContent = modo==='nuvem'
@@ -740,6 +760,8 @@ document.getElementById('cSalvar').onclick = ()=>{
   state.cfg.limite  = parseFloat(document.getElementById('cLimite').value)||0;
   state.cfg.tetoFds = parseFloat(document.getElementById('cTeto').value)||0;
   state.cfg.sextaNoFds = document.getElementById('cSexta').value==='sim';
+  state.cfg.corPrimaria = document.getElementById('cCorPrim').value || CFG_PADRAO.corPrimaria;
+  state.cfg.corSecundaria = document.getElementById('cCorSec').value || CFG_PADRAO.corSecundaria;
   state.cfg.comprometido = [...document.querySelectorAll('#cFixas .fixa')].map(d=>{
     const i = d.querySelectorAll('input');
     return { nome: i[0].value.trim()||'Item', valor: parseFloat(i[1].value)||0 };
