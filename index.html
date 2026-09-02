@@ -818,6 +818,8 @@ function aplicar(res){
         descricao:a.descricao||'', data:a.data||hojeISO(),
         categoria: cats.includes(a.categoria)?a.categoria:'Outros',
         metodo: a.tipo==='despesa' ? (a.metodo==='conta'?'conta':state.cfg.metodoPadrao) : 'conta' });
+    } else if(a.tipo==='comprometido' && a.nome && Number(a.valor)>0){
+      state.cfg.comprometido = [...(state.cfg.comprometido||[]), { nome:a.nome, valor:Number(a.valor) }];
     }
   });
 }
@@ -845,15 +847,18 @@ Ações possíveis:
 {"tipo":"despesa","valor":38,"descricao":"ifood","categoria":"iFood","metodo":"picpay","data":"AAAA-MM-DD"}
 {"tipo":"receita","valor":2875,"descricao":"salário","categoria":"Salário","data":"AAAA-MM-DD"}
 {"tipo":"pendencia","titulo":"Reunião com Jamil","data":"AAAA-MM-DD","hora":"09:00"}
+{"tipo":"comprometido","nome":"(curto, descrevendo o que o usuário disse)","valor":200}
 
 Regras:
 - Categorias de despesa: ${CAT_DESPESA.join(', ')}. Gasto com a Nicolly vai em "Nicolly". Delivery vai em "iFood".
 - Categorias de receita: ${CAT_RECEITA.join(', ')}.
 - "metodo": "picpay" para crédito/cartão/PicPay (padrão, a conta fica zerada) ou "conta" para pix, débito e dinheiro.
+- "comprometido": use quando o usuário falar de uma dívida, parcela ou conta que só vai pagar com o PRÓXIMO salário (ex.: "tenho uma dívida de 200 no cartão pra pagar mês que vem", "separar 150 pro aluguel do mês que vem"). NÃO é um lançamento do mês atual, então nunca use "despesa" pra isso. O "nome" deve descrever o que o usuário disse (ex. "Dívida do cartão") — nunca invente marca/banco/detalhe que ele não mencionou.
+  Cada "comprometido" é sempre um item NOVO na lista (compare com regras.comprometidoProximoSalario nos DADOS): nunca some o valor a um item existente nem reescreva um "nome" já usado, mesmo que pareça parecido — crie outro item com um "nome" que os diferencie (ex. "Dívida cartão" e "Dívida cartão (2)"), a menos que o usuário claramente peça pra corrigir/atualizar um item específico que já existe, aí sim reaproveite o mesmo "nome" para substituí-lo.
 - Uma mensagem pode gerar várias ações. Nada a registrar: "acoes" vazio.
 - Resolva datas relativas em datas absolutas. Hora em 24h; omita se não houver.
 - Pergunta sobre os dados: não crie ações, responda usando SITUACAO com valores em reais.
-- "resposta": uma ou duas frases curtas. Ao registrar gasto, diga quanto resta do teto do fim de semana ou do limite livre. Sem emoji, sem sermão.
+- "resposta": uma ou duas frases curtas. Ao registrar gasto, diga quanto resta do teto do fim de semana ou do limite livre. Ao registrar um "comprometido", diga o novo total comprometido pro próximo salário. Sem emoji, sem sermão.
 
 DADOS: ${JSON.stringify(ctx)}`;
 
