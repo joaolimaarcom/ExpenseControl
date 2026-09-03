@@ -155,6 +155,7 @@
   .tabs button[data-view="hoje"]::before{-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='3'/%3E%3Cpath d='M16 2v4M8 2v4M3 10h18'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='3'/%3E%3Cpath d='M16 2v4M8 2v4M3 10h18'/%3E%3C/svg%3E")}
   .tabs button[data-view="mes"]::before{-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3v18h18'/%3E%3Cpath d='M7 15l3-4 3 3 5-7'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3v18h18'/%3E%3Cpath d='M7 15l3-4 3 3 5-7'/%3E%3C/svg%3E")}
   .tabs button[data-view="agenda"]::before{-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='3'/%3E%3Cpath d='M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='3'/%3E%3Cpath d='M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01'/%3E%3C/svg%3E")}
+  .tabs button[data-view="carteiras"]::before{-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='6' width='18' height='13' rx='2'/%3E%3Cpath d='M3 10h18'/%3E%3Ccircle cx='16' cy='14' r='1.3'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='6' width='18' height='13' rx='2'/%3E%3Cpath d='M3 10h18'/%3E%3Ccircle cx='16' cy='14' r='1.3'/%3E%3C/svg%3E")}
   .tabs .bolha{position:absolute;margin-top:-16px;margin-left:10px;min-width:15px;padding:0 4px;background:var(--out);color:#fff;border-radius:99px;font-size:9.5px;font-weight:700;font-variant-numeric:tabular-nums;line-height:15px;text-align:center}
   .tabs .bolha[hidden]{display:none}
 
@@ -294,6 +295,10 @@
   <section id="v-agenda" hidden>
     <div id="aLista"></div>
   </section>
+
+  <section id="v-carteiras" hidden>
+    <div id="carteirasLista"></div>
+  </section>
 </main>
 
 <div class="barra">
@@ -306,6 +311,7 @@
     <button data-view="hoje" aria-current="true">Hoje</button>
     <button data-view="mes">Mês</button>
     <button data-view="agenda">Agenda<span class="bolha" id="bolha" hidden>0</span></button>
+    <button data-view="carteiras">Carteiras</button>
   </div>
 </div>
 
@@ -328,6 +334,9 @@
         <div class="fld" id="wrapMet"><label for="fMet">Pago com</label>
           <select id="fMet"><option value="picpay">PicPay (crédito)</option><option value="conta">Conta / Pix</option></select></div>
       </div>
+      <div class="linha"><div class="fld"><label for="fCarteira">Carteira (opcional)</label>
+        <input id="fCarteira" type="text" list="carteirasList" placeholder="ex: freela, reserva"></div></div>
+      <datalist id="carteirasList"></datalist>
     </div>
     <div id="campPend" hidden>
       <div class="linha"><div class="fld"><label for="pTitulo">O quê</label><input id="pTitulo" type="text" placeholder="Reunião com…"></div></div>
@@ -502,6 +511,22 @@ const orcamentoRestante = ym => fdsRestantes(ym).reduce((s,f)=> s + Math.max(0, 
 const pendenciasAbertas = () => state.pendencias.filter(p=>!p.feito)
   .sort((a,b)=> (a.data+(a.hora||'99:99')).localeCompare(b.data+(b.hora||'99:99')));
 
+const normCarteira = s => { s = String(s||'').trim(); return s ? s.charAt(0).toUpperCase()+s.slice(1) : ''; };
+function carteirasResumo(){
+  const mapa = {};
+  state.lancamentos.forEach(x=>{
+    if(!x.carteira) return;
+    if(!mapa[x.carteira]) mapa[x.carteira] = { entra:0, sai:0, itens:[] };
+    if(x.tipo==='receita') mapa[x.carteira].entra += x.valor;
+    else if(x.tipo==='despesa') mapa[x.carteira].sai += x.valor;
+    mapa[x.carteira].itens.push(x);
+  });
+  return Object.entries(mapa).map(([nome,d])=>({
+    nome, entra:d.entra, sai:d.sai, saldo:d.entra-d.sai,
+    itens: d.itens.slice().sort((a,b)=> b.data.localeCompare(a.data) || b.id.localeCompare(a.id))
+  })).sort((a,b)=> b.saldo-a.saldo);
+}
+
 /* =====================================================================
    camada de dados: Firestore quando logado, localStorage quando não
    ===================================================================== */
@@ -607,10 +632,28 @@ function render(){
   aplicarTema();
   document.getElementById('mesLabel').firstChild.nodeValue = nomeMes(mesRef).replace(/^./, c=>c.toUpperCase());
   document.getElementById('mesSub').textContent = mesRef === hojeISO().slice(0,7) ? 'mês atual' : '';
-  renderHoje(); renderMes(); renderAgenda();
+  renderHoje(); renderMes(); renderAgenda(); renderCarteiras();
   const atrasadas = pendenciasAbertas().filter(p=>p.data <= hojeISO()).length;
   const b = document.getElementById('bolha');
   b.hidden = atrasadas === 0; b.textContent = atrasadas;
+}
+
+function renderCarteiras(){
+  const lista = carteirasResumo(), el = document.getElementById('carteirasLista');
+  if(!lista.length){
+    el.innerHTML = '<div class="vazio">Nenhuma carteira ainda. Marque a carteira ao registrar um gasto ou entrada, ou escreva algo como <b>ganhei 100 de freela, carteira freela</b> no campo abaixo.</div>';
+    return;
+  }
+  el.innerHTML = lista.map(c => `
+    <h2>${esc(c.nome)}</h2>
+    <div class="contas" style="margin-bottom:12px">
+      <div class="conta"><div>Entrou</div><div class="cv pos">${brl(c.entra)}</div></div>
+      <div class="conta"><div>Saiu</div><div class="cv neg">${brl(c.sai)}</div></div>
+      <div class="conta total"><div>Saldo</div><div class="cv ${c.saldo<0?'neg':''}">${brl(c.saldo)}</div></div>
+    </div>
+    <div style="margin-bottom:20px">${c.itens.map(itemLanc).join('')}</div>
+  `).join('');
+  ligarLanc(el);
 }
 
 function renderHoje(){
@@ -731,7 +774,7 @@ function itemLanc(x){
   const cred = x.tipo==='despesa' && x.metodo==='picpay';
   return `<div class="item">
     <div class="body"><div class="t">${esc(x.descricao || x.categoria || 'Lançamento')}</div>
-      <div class="m">${esc(x.categoria||'')}${cred?'<span class="tag cred">PicPay</span>':(x.tipo==='despesa'?'<span class="tag">conta</span>':'')}</div></div>
+      <div class="m">${esc(x.categoria||'')}${cred?'<span class="tag cred">PicPay</span>':(x.tipo==='despesa'?'<span class="tag">conta</span>':'')}${x.carteira?'<span class="tag">'+esc(x.carteira)+'</span>':''}</div></div>
     <div class="v ${x.tipo==='receita'?'in':''}">${x.tipo==='receita'?'+':'−'} ${brl(x.valor).replace('R$ ','')}</div>
     <button class="x" data-del="${x.id}" aria-label="Excluir">×</button></div>`;
 }
@@ -765,7 +808,7 @@ document.getElementById('nextMes').onclick = ()=>{ mesRef = mudaMes(mesRef, 1); 
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
   viewAtual = b.dataset.view;
   document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-current', String(x===b)));
-  ['hoje','mes','agenda'].forEach(v=>document.getElementById('v-'+v).hidden = v!==viewAtual);
+  ['hoje','mes','agenda','carteiras'].forEach(v=>document.getElementById('v-'+v).hidden = v!==viewAtual);
   window.scrollTo({top:0});
 });
 
@@ -784,10 +827,11 @@ function setTipo(t){
 }
 function abrirModal(t){
   setTipo(t);
-  ['fValor','fDesc','pTitulo','pHora'].forEach(id=>document.getElementById(id).value='');
+  ['fValor','fDesc','pTitulo','pHora','fCarteira'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('fData').value = hojeISO();
   document.getElementById('pData').value = hojeISO();
   document.getElementById('fMet').value = state.cfg.metodoPadrao;
+  document.getElementById('carteirasList').innerHTML = carteirasResumo().map(c=>`<option value="${esc(c.nome)}">`).join('');
   document.getElementById('modal').hidden = false;
   setTimeout(()=>document.getElementById(t==='pendencia'?'pTitulo':'fValor').focus(), 60);
 }
@@ -804,6 +848,7 @@ document.getElementById('btnSalvar').onclick = ()=>{
       descricao:document.getElementById('fDesc').value.trim(),
       categoria:document.getElementById('fCat').value,
       metodo: tipoModal==='despesa' ? document.getElementById('fMet').value : 'conta',
+      carteira: normCarteira(document.getElementById('fCarteira').value) || null,
       data:document.getElementById('fData').value||hojeISO() });
     toast(tipoModal==='receita'?'Entrada salva':'Gasto salvo');
   }
@@ -908,12 +953,24 @@ async function enviar(){
   catch(e){ res = fallback(txt); }
   finally{ load.remove(); document.getElementById('btnEnviar').disabled = false; }
 
-  aplicar(res);
-  state.chat.push({de:'ia', txt: res.resposta || 'Registrado.', erro: !!res.erro});
+  const avisos = aplicar(res);
+  let txtResposta = res.resposta || 'Registrado.';
+  if(avisos.length) txtResposta += ' ' + avisos.join(' ');
+  state.chat.push({de:'ia', txt: txtResposta, erro: !!res.erro || avisos.length>0});
   salvar(); render(); renderChat();
 }
 
+function encontrarLancamento(busca, data){
+  const termo = String(busca||'').toLowerCase().trim();
+  if(!termo) return null;
+  return state.lancamentos
+    .filter(x => (x.descricao||'').toLowerCase().includes(termo) || (x.categoria||'').toLowerCase().includes(termo))
+    .filter(x => !data || x.data === data)
+    .sort((a,b)=> b.data.localeCompare(a.data) || b.id.localeCompare(a.id))[0] || null;
+}
+
 function aplicar(res){
+  const avisos = [];
   (res.acoes||[]).forEach(a=>{
     if(a.tipo==='pendencia' && a.titulo){
       state.pendencias.push({ id:uid(), titulo:a.titulo, data:a.data||hojeISO(), hora:a.hora||null, feito:false });
@@ -922,11 +979,23 @@ function aplicar(res){
       state.lancamentos.push({ id:uid(), tipo:a.tipo, valor:Number(a.valor),
         descricao:a.descricao||'', data:a.data||hojeISO(),
         categoria: cats.includes(a.categoria)?a.categoria:'Outros',
-        metodo: a.tipo==='despesa' ? (a.metodo==='conta'?'conta':state.cfg.metodoPadrao) : 'conta' });
+        metodo: a.tipo==='despesa' ? (a.metodo==='conta'?'conta':state.cfg.metodoPadrao) : 'conta',
+        carteira: a.carteira ? normCarteira(a.carteira) : null });
     } else if(a.tipo==='comprometido' && a.nome && Number(a.valor)>0){
       state.cfg.comprometido = [...(state.cfg.comprometido||[]), { nome:a.nome, valor:Number(a.valor) }];
+    } else if(a.tipo==='corrigir' && a.busca){
+      const alvo = encontrarLancamento(a.busca, a.data);
+      if(!alvo){ avisos.push('Não encontrei "'+a.busca+'" pra corrigir — confira no "+" se precisar.'); return; }
+      const c = a.campos || {};
+      if(c.metodo==='picpay' || c.metodo==='conta') alvo.metodo = c.metodo;
+      if(Number(c.valor) > 0) alvo.valor = Number(c.valor);
+      if(c.categoria && (CAT_DESPESA.includes(c.categoria) || CAT_RECEITA.includes(c.categoria))) alvo.categoria = c.categoria;
+      if(c.descricao) alvo.descricao = c.descricao;
+      if(c.data) alvo.data = c.data;
+      if(c.carteira !== undefined) alvo.carteira = c.carteira ? normCarteira(c.carteira) : null;
     }
   });
+  return avisos;
 }
 
 async function interpretar(msg){
@@ -941,7 +1010,8 @@ async function interpretar(msg){
       gastoNesteFimDeSemana: gastoNoFds(f), fimDeSemanaAtual: f, livreNoProximoSalario: p.livre,
       orcamentoRestanteFinsDeSemana: orcamentoRestante(ym), diasSemGastar: streakLimpo() },
     gastosPorCategoria: porCategoria(ym),
-    ultimosLancamentos: state.lancamentos.slice(-40).map(l=>({t:l.tipo,v:l.valor,d:l.descricao,c:l.categoria,m:l.metodo,data:l.data})),
+    carteirasAtivas: carteirasResumo().map(c=>c.nome),
+    ultimosLancamentos: state.lancamentos.slice(-40).map(l=>({t:l.tipo,v:l.valor,d:l.descricao,c:l.categoria,m:l.metodo,car:l.carteira||null,data:l.data})),
     pendenciasAbertas: pendenciasAbertas().map(x=>({titulo:x.titulo,data:x.data,hora:x.hora}))
   };
   const sistema = `Você é o motor de um app pessoal de finanças e pendências, em português do Brasil.
@@ -949,21 +1019,24 @@ Hoje é ${hoje} (${ctx.diaDaSemana}).
 Devolva SOMENTE um objeto JSON: {"acoes":[],"resposta":"..."}
 
 Ações possíveis:
-{"tipo":"despesa","valor":38,"descricao":"ifood","categoria":"iFood","metodo":"picpay","data":"AAAA-MM-DD"}
-{"tipo":"receita","valor":2875,"descricao":"salário","categoria":"Salário","data":"AAAA-MM-DD"}
+{"tipo":"despesa","valor":38,"descricao":"ifood","categoria":"iFood","metodo":"picpay","carteira":null,"data":"AAAA-MM-DD"}
+{"tipo":"receita","valor":2875,"descricao":"salário","categoria":"Salário","carteira":null,"data":"AAAA-MM-DD"}
 {"tipo":"pendencia","titulo":"Reunião com Jamil","data":"AAAA-MM-DD","hora":"09:00"}
 {"tipo":"comprometido","nome":"(curto, descrevendo o que o usuário disse)","valor":200}
+{"tipo":"corrigir","busca":"(palavra que aparece na descrição/categoria do lançamento a corrigir)","data":"AAAA-MM-DD (se houver pista) ou omita","campos":{"metodo":"conta"}}
 
 Regras:
 - Categorias de despesa: ${CAT_DESPESA.join(', ')}. Gasto com a Nicolly vai em "Nicolly". Delivery vai em "iFood".
 - Categorias de receita: ${CAT_RECEITA.join(', ')}.
 - "metodo": "picpay" para crédito/cartão/PicPay (padrão, a conta fica zerada) ou "conta" para pix, débito e dinheiro.
+- "carteira": só preencha se o usuário mencionar que o dinheiro é de uma reserva/bolso separado (ex.: "ganhei 100 de freela", "paguei o material com o dinheiro do freela", "isso sai da minha reserva de viagem"). Reaproveite um nome de carteirasAtivas nos DADOS quando for claramente a mesma carteira, mesmo que escrito diferente (maiúscula/minúscula, plural); só use um nome novo se for outra coisa. Se o usuário não mencionar carteira nenhuma, deixe "carteira" nulo — nunca invente uma.
 - "comprometido": use quando o usuário falar de uma dívida, parcela ou conta que só vai pagar com o PRÓXIMO salário (ex.: "tenho uma dívida de 200 no cartão pra pagar mês que vem", "separar 150 pro aluguel do mês que vem"). NÃO é um lançamento do mês atual, então nunca use "despesa" pra isso. O "nome" deve descrever o que o usuário disse (ex. "Dívida do cartão") — nunca invente marca/banco/detalhe que ele não mencionou.
   Cada "comprometido" é sempre um item NOVO na lista (compare com regras.comprometidoProximoSalario nos DADOS): nunca some o valor a um item existente nem reescreva um "nome" já usado, mesmo que pareça parecido — crie outro item com um "nome" que os diferencie (ex. "Dívida cartão" e "Dívida cartão (2)"), a menos que o usuário claramente peça pra corrigir/atualizar um item específico que já existe, aí sim reaproveite o mesmo "nome" para substituí-lo.
+- "corrigir": use quando o usuário quiser CORRIGIR um lançamento que já existe (categoria errada, método errado, valor errado, esqueceu de marcar a carteira) em vez de criar um novo. Confira ultimosLancamentos nos DADOS pra achar o item certo antes de responder. "busca" é uma palavra-chave que aparece na descrição ou categoria do lançamento original (ex.: "halls"). "data" é a data do lançamento original — inclua sempre que o usuário der uma pista de tempo ("ontem", "sexta"), pra não corrigir a coisa errada; omita só se não houver pista nenhuma. "campos" só deve conter o que muda: "valor", "descricao", "categoria", "metodo" ("picpay" ou "conta") e/ou "carteira". Nunca crie uma ação "despesa" ou "receita" nova pra isso — "corrigir" edita o lançamento no lugar, não duplica.
 - Uma mensagem pode gerar várias ações. Nada a registrar: "acoes" vazio.
 - Resolva datas relativas em datas absolutas. Hora em 24h; omita se não houver.
 - Pergunta sobre os dados: não crie ações, responda usando SITUACAO com valores em reais.
-- "resposta": uma ou duas frases curtas. Ao registrar gasto, diga quanto resta do teto do fim de semana ou do limite livre. Ao registrar um "comprometido", diga o novo total comprometido pro próximo salário. Sem emoji, sem sermão.
+- "resposta": uma ou duas frases curtas. Ao registrar gasto, diga quanto resta do teto do fim de semana ou do limite livre. Ao registrar um "comprometido", diga o novo total comprometido pro próximo salário. Ao "corrigir", confirme o que mudou. Sem emoji, sem sermão.
 
 DADOS: ${JSON.stringify(ctx)}`;
 
