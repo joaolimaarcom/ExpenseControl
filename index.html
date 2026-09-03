@@ -968,6 +968,15 @@ function encontrarLancamento(busca, data){
     .filter(x => !data || x.data === data)
     .sort((a,b)=> b.data.localeCompare(a.data) || b.id.localeCompare(a.id))[0] || null;
 }
+function encontrarPendencia(busca, data){
+  const termo = String(busca||'').toLowerCase().trim();
+  if(!termo) return null;
+  return state.pendencias
+    .filter(p => !p.feito)
+    .filter(p => (p.titulo||'').toLowerCase().includes(termo))
+    .filter(p => !data || p.data === data)
+    .sort((a,b)=> (a.data+(a.hora||'99:99')).localeCompare(b.data+(b.hora||'99:99')))[0] || null;
+}
 
 function aplicar(res){
   const avisos = [];
@@ -983,6 +992,13 @@ function aplicar(res){
         carteira: a.carteira ? normCarteira(a.carteira) : null });
     } else if(a.tipo==='comprometido' && a.nome && Number(a.valor)>0){
       state.cfg.comprometido = [...(state.cfg.comprometido||[]), { nome:a.nome, valor:Number(a.valor) }];
+    } else if(a.tipo==='corrigir' && a.alvo==='pendencia' && a.busca){
+      const alvo = encontrarPendencia(a.busca, a.data);
+      if(!alvo){ avisos.push('Não encontrei "'+a.busca+'" na agenda pra corrigir.'); return; }
+      const c = a.campos || {};
+      if(c.titulo) alvo.titulo = c.titulo;
+      if(c.data) alvo.data = c.data;
+      if(c.hora !== undefined) alvo.hora = c.hora || null;
     } else if(a.tipo==='corrigir' && a.busca){
       const alvo = encontrarLancamento(a.busca, a.data);
       if(!alvo){ avisos.push('Não encontrei "'+a.busca+'" pra corrigir — confira no "+" se precisar.'); return; }
@@ -993,6 +1009,14 @@ function aplicar(res){
       if(c.descricao) alvo.descricao = c.descricao;
       if(c.data) alvo.data = c.data;
       if(c.carteira !== undefined) alvo.carteira = c.carteira ? normCarteira(c.carteira) : null;
+    } else if(a.tipo==='excluir' && a.alvo==='pendencia' && a.busca){
+      const alvo = encontrarPendencia(a.busca, a.data);
+      if(!alvo){ avisos.push('Não encontrei "'+a.busca+'" na agenda pra excluir.'); return; }
+      state.pendencias = state.pendencias.filter(p=>p.id!==alvo.id);
+    } else if(a.tipo==='excluir' && a.busca){
+      const alvo = encontrarLancamento(a.busca, a.data);
+      if(!alvo){ avisos.push('Não encontrei "'+a.busca+'" pra excluir.'); return; }
+      state.lancamentos = state.lancamentos.filter(x=>x.id!==alvo.id);
     }
   });
   return avisos;
@@ -1023,7 +1047,10 @@ Ações possíveis:
 {"tipo":"receita","valor":2875,"descricao":"salário","categoria":"Salário","carteira":null,"data":"AAAA-MM-DD"}
 {"tipo":"pendencia","titulo":"Reunião com Jamil","data":"AAAA-MM-DD","hora":"09:00"}
 {"tipo":"comprometido","nome":"(curto, descrevendo o que o usuário disse)","valor":200}
-{"tipo":"corrigir","busca":"(palavra que aparece na descrição/categoria do lançamento a corrigir)","data":"AAAA-MM-DD (se houver pista) ou omita","campos":{"metodo":"conta"}}
+{"tipo":"corrigir","alvo":"lancamento","busca":"(palavra que aparece na descrição/categoria do lançamento a corrigir)","data":"AAAA-MM-DD (se houver pista) ou omita","campos":{"metodo":"conta"}}
+{"tipo":"corrigir","alvo":"pendencia","busca":"(palavra que aparece no título do compromisso)","campos":{"hora":"16:00"}}
+{"tipo":"excluir","alvo":"lancamento","busca":"(palavra-chave)","data":"AAAA-MM-DD ou omita"}
+{"tipo":"excluir","alvo":"pendencia","busca":"(palavra-chave do título)"}
 
 Regras:
 - Categorias de despesa: ${CAT_DESPESA.join(', ')}. Gasto com a Nicolly vai em "Nicolly". Delivery vai em "iFood".
@@ -1032,13 +1059,18 @@ Regras:
 - "carteira": só preencha se o usuário mencionar que o dinheiro é de uma reserva/bolso separado (ex.: "ganhei 100 de freela", "paguei o material com o dinheiro do freela", "isso sai da minha reserva de viagem"). Reaproveite um nome de carteirasAtivas nos DADOS quando for claramente a mesma carteira, mesmo que escrito diferente (maiúscula/minúscula, plural); só use um nome novo se for outra coisa. Se o usuário não mencionar carteira nenhuma, deixe "carteira" nulo — nunca invente uma.
 - "comprometido": use quando o usuário falar de uma dívida, parcela ou conta que só vai pagar com o PRÓXIMO salário (ex.: "tenho uma dívida de 200 no cartão pra pagar mês que vem", "separar 150 pro aluguel do mês que vem"). NÃO é um lançamento do mês atual, então nunca use "despesa" pra isso. O "nome" deve descrever o que o usuário disse (ex. "Dívida do cartão") — nunca invente marca/banco/detalhe que ele não mencionou.
   Cada "comprometido" é sempre um item NOVO na lista (compare com regras.comprometidoProximoSalario nos DADOS): nunca some o valor a um item existente nem reescreva um "nome" já usado, mesmo que pareça parecido — crie outro item com um "nome" que os diferencie (ex. "Dívida cartão" e "Dívida cartão (2)"), a menos que o usuário claramente peça pra corrigir/atualizar um item específico que já existe, aí sim reaproveite o mesmo "nome" para substituí-lo.
-- "corrigir": use quando o usuário quiser CORRIGIR um lançamento que já existe (categoria errada, método errado, valor errado, esqueceu de marcar a carteira) em vez de criar um novo. Confira ultimosLancamentos nos DADOS pra achar o item certo antes de responder. "busca" é uma palavra-chave que aparece na descrição ou categoria do lançamento original (ex.: "halls"). "data" é a data do lançamento original — inclua sempre que o usuário der uma pista de tempo ("ontem", "sexta"), pra não corrigir a coisa errada; omita só se não houver pista nenhuma. "campos" só deve conter o que muda: "valor", "descricao", "categoria", "metodo" ("picpay" ou "conta") e/ou "carteira". Nunca crie uma ação "despesa" ou "receita" nova pra isso — "corrigir" edita o lançamento no lugar, não duplica.
+- "corrigir" (alvo "lancamento", padrão se "alvo" for omitido): use quando o usuário quiser CORRIGIR um lançamento que já existe (categoria errada, método errado, valor errado, esqueceu de marcar a carteira) em vez de criar um novo. Confira ultimosLancamentos nos DADOS pra achar o item certo antes de responder. "busca" é uma palavra-chave que aparece na descrição ou categoria do lançamento original (ex.: "halls"). "data" é a data do lançamento original — inclua sempre que o usuário der uma pista de tempo ("ontem", "sexta"), pra não corrigir a coisa errada; omita só se não houver pista nenhuma. "campos" só deve conter o que muda: "valor", "descricao", "categoria", "metodo" ("picpay" ou "conta") e/ou "carteira". Nunca crie uma ação "despesa" ou "receita" nova pra isso — "corrigir" edita o lançamento no lugar, não duplica.
+- "corrigir" com "alvo":"pendencia": use quando um compromisso que JÁ ESTÁ em pendenciasAbertas nos DADOS mudou de horário, data ou título (ex.: "a reunião com o Jamil foi pra 16h", "mudei o dentista pra sexta"). Confira pendenciasAbertas primeiro. "busca" é uma palavra do título original (ex.: "jamil"). "campos" só o que muda: "titulo", "data" e/ou "hora". ISSO É EDITAR NO LUGAR — nunca crie uma ação "pendencia" nova quando já existe uma em aberto claramente falando da mesma coisa; "pendencia" é só para compromissos que ainda não existem em pendenciasAbertas.
+- "excluir": use quando o usuário quiser apagar um lançamento ("alvo":"lancamento") ou compromisso ("alvo":"pendencia") que já existe, sem substituir por outro. "busca" é a palavra-chave; "data" (só p/ lancamento) ajuda a não apagar o item errado quando há mais de um parecido. Se o usuário só disser "exclui" sem dizer o quê, ou a busca não bater com nada claro em ultimosLancamentos/pendenciasAbertas, não invente um alvo: deixe "acoes" vazio e pergunte o quê na "resposta".
+- As mensagens anteriores desta conversa vêm antes desta no histórico — use-as pra entender respostas curtas a uma pergunta que você mesmo fez (ex.: você perguntou "qual item?" e a próxima mensagem só nomeia o item).
 - Uma mensagem pode gerar várias ações. Nada a registrar: "acoes" vazio.
 - Resolva datas relativas em datas absolutas. Hora em 24h; omita se não houver.
 - Pergunta sobre os dados: não crie ações, responda usando SITUACAO com valores em reais.
-- "resposta": uma ou duas frases curtas. Ao registrar gasto, diga quanto resta do teto do fim de semana ou do limite livre. Ao registrar um "comprometido", diga o novo total comprometido pro próximo salário. Ao "corrigir", confirme o que mudou. Sem emoji, sem sermão.
+- "resposta": uma ou duas frases curtas. Ao registrar gasto, diga quanto resta do teto do fim de semana ou do limite livre. Ao registrar um "comprometido", diga o novo total comprometido pro próximo salário. Ao "corrigir" ou "excluir", confirme o que mudou/sumiu. Sem emoji, sem sermão.
 
 DADOS: ${JSON.stringify(ctx)}`;
+
+  const historico = state.chat.slice(-9, -1).map(m => ({ role: m.de==='eu' ? 'user' : 'assistant', content: m.txt }));
 
   const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method:'POST',
@@ -1046,7 +1078,7 @@ DADOS: ${JSON.stringify(ctx)}`;
     body: JSON.stringify({
       model: CONFIG.groq.model, temperature: 0.2, max_tokens: 900,
       response_format: { type: 'json_object' },
-      messages: [ {role:'system', content:sistema}, {role:'user', content:msg} ]
+      messages: [ {role:'system', content:sistema}, ...historico, {role:'user', content:msg} ]
     })
   });
   if(!resp.ok) throw new Error('http '+resp.status);
