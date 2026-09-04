@@ -193,6 +193,12 @@
   .fixa input:first-child{flex:1} .fixa input:nth-child(2){width:100px}
   .fixa button{color:var(--muted);padding:0 6px}
   .addfixa{font-size:13px;color:var(--due);padding:4px 0;font-weight:600}
+  .metaForm{display:flex;gap:8px;align-items:center;margin:6px 0 4px}
+  .metaForm[hidden]{display:none}
+  .metaForm input{background:var(--card-2);border:1px solid var(--line);color:var(--ink);
+    border-radius:var(--r-sm);padding:9px 10px;font-size:14px;min-width:0;flex:1}
+  .metaForm button{color:var(--tag-cred-ink);font-weight:700;font-size:13px;padding:0 6px;flex:0 0 auto}
+  .metaForm button.rem{color:var(--out)}
   .rodape{margin-top:16px;padding-top:14px;border-top:1px solid var(--line-2);font-size:12.5px;color:var(--muted);line-height:1.6}
   .rodape button{font-size:12.5px;font-weight:600}
   #cExportar,#cImportar{color:var(--tag-cred-ink)}
@@ -567,10 +573,37 @@ function carteirasResumo(){
     else if(x.tipo==='despesa') mapa[x.carteira].sai += x.valor;
     mapa[x.carteira].itens.push(x);
   });
+  // carteira que só tem meta ainda aparece, pra dar pra planejar antes de gastar
+  Object.keys(state.cfg.metas || {}).forEach(nome=>{
+    if(!mapa[nome]) mapa[nome] = { entra:0, sai:0, itens:[] };
+  });
   return Object.entries(mapa).map(([nome,d])=>({
     nome, entra:d.entra, sai:d.sai, saldo:d.entra-d.sai,
     itens: d.itens.slice().sort((a,b)=> b.data.localeCompare(a.data) || b.id.localeCompare(a.id))
   })).sort((a,b)=> b.saldo-a.saldo);
+}
+
+/* Meses do mês atual até o prazo, contando o atual: prazo neste mês = 1,
+   prazo já passado = 0. */
+function mesesAte(ym){
+  const [a1,m1] = hojeISO().slice(0,7).split('-').map(Number);
+  const [a2,m2] = String(ym||'').split('-').map(Number);
+  if(!a2 || !m2) return 0;
+  return (a2-a1)*12 + (m2-m1) + 1;
+}
+function metaCarteira(nome, saldo){
+  const m = (state.cfg.metas || {})[nome];
+  const alvo = Number(m && m.valor) || 0;
+  if(alvo <= 0) return null;
+  const falta = Math.max(0, alvo - saldo);
+  const r = { alvo, prazo: m.prazo || null, falta, batida: saldo >= alvo,
+              pct: Math.max(0, Math.min(100, saldo/alvo*100)), porMes: null, vencido: false };
+  if(r.prazo){
+    const meses = mesesAte(r.prazo);
+    r.vencido = meses <= 0 && !r.batida;
+    if(meses > 0 && falta > 0) r.porMes = falta / meses;
+  }
+  return r;
 }
 
 /* =====================================================================
@@ -709,16 +742,62 @@ function renderCarteiras(){
     el.innerHTML = '<div class="vazio">Nenhuma carteira ainda. Marque a carteira ao registrar um gasto ou entrada, ou escreva algo como <b>ganhei 100 de freela, carteira freela</b> no campo abaixo.</div>';
     return;
   }
-  el.innerHTML = lista.map(c => `
+  // o índice (e não o nome) liga o DOM aos dados: nome de carteira é texto livre
+  el.innerHTML = lista.map((c,i) => {
+    const m = metaCarteira(c.nome, c.saldo);
+    const guardado = (state.cfg.metas || {})[c.nome] || {};
+    let plano = '';
+    if(m){
+      const nota = m.batida ? 'Meta atingida.'
+        : m.vencido        ? 'O prazo ('+nomeMes(m.prazo)+') passou e ainda faltam '+brl(m.falta)+'.'
+        : m.porMes         ? 'Faltam '+brl(m.falta)+' — '+brl(m.porMes)+' por mês até '+nomeMes(m.prazo)+'.'
+        :                    'Faltam '+brl(m.falta)+'.';
+      plano = `<div class="gauge" style="margin:0 0 8px"><i class="usado" style="width:${m.pct.toFixed(1)}%"></i></div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${esc(nota)}</div>`;
+    }
+    return `
     <h2>${esc(c.nome)}</h2>
-    <div class="contas" style="margin-bottom:12px">
+    <div class="contas" style="margin-bottom:10px">
       <div class="conta"><div>Entrou</div><div class="cv pos">${brl(c.entra)}</div></div>
       <div class="conta"><div>Saiu</div><div class="cv neg">${brl(c.sai)}</div></div>
-      <div class="conta total"><div>Saldo</div><div class="cv ${c.saldo<0?'neg':''}">${brl(c.saldo)}</div></div>
+      <div class="conta total"><div>Saldo${m?`<small>de ${brl(m.alvo)} da meta</small>`:''}</div><div class="cv ${c.saldo<0?'neg':''}">${brl(c.saldo)}</div></div>
     </div>
-    <div style="margin-bottom:20px">${c.itens.map(itemLanc).join('')}</div>
-  `).join('');
+    ${plano}
+    <button class="addfixa" data-abrir-meta="${i}">${m?'editar meta':'+ definir meta'}</button>
+    <div class="metaForm" data-form="${i}" hidden>
+      <input type="number" step="0.01" inputmode="decimal" placeholder="quanto juntar" value="${m?m.alvo:''}">
+      <input type="month" value="${esc(guardado.prazo||'')}">
+      <button data-salvar-meta="${i}">salvar</button>
+      ${m?`<button class="rem" data-limpar-meta="${i}">remover</button>`:''}
+    </div>
+    <div style="margin:10px 0 20px">${c.itens.map(itemLanc).join('')}</div>`;
+  }).join('');
   ligarLanc(el);
+  ligarMetas(el, lista);
+}
+
+function ligarMetas(root, lista){
+  const form = i => root.querySelector('.metaForm[data-form="'+i+'"]');
+  root.querySelectorAll('[data-abrir-meta]').forEach(b=>b.onclick=()=>{
+    const f = form(b.dataset.abrirMeta);
+    if(f) f.hidden = !f.hidden;
+  });
+  root.querySelectorAll('[data-salvar-meta]').forEach(b=>b.onclick=()=>{
+    const nome = (lista[b.dataset.salvarMeta]||{}).nome;
+    const ins = form(b.dataset.salvarMeta).querySelectorAll('input');
+    const valor = parseFloat(String(ins[0].value).replace(',','.'));
+    if(!nome) return;
+    if(!valor || valor <= 0){ toast('Informe quanto quer juntar'); return; }
+    state.cfg.metas = state.cfg.metas || {};
+    state.cfg.metas[nome] = { valor, prazo: ins[1].value || null };
+    salvar(); render(); toast('Meta salva');
+  });
+  root.querySelectorAll('[data-limpar-meta]').forEach(b=>b.onclick=()=>{
+    const nome = (lista[b.dataset.limparMeta]||{}).nome;
+    if(!nome || !state.cfg.metas) return;
+    delete state.cfg.metas[nome];
+    salvar(); render(); toast('Meta removida');
+  });
 }
 
 function renderHoje(){
