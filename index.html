@@ -384,9 +384,11 @@
     </div>
     <div class="rodape">
       <div id="cConta">—</div>
+      <div id="cMemoria" style="margin-top:4px"></div>
       <div style="margin-top:8px;display:flex;gap:14px;flex-wrap:wrap">
         <button id="cExportar">Baixar backup</button>
         <button id="cImportar">Restaurar backup</button>
+        <button id="cLimparMemoria">Limpar memória</button>
         <button id="cSair">Sair da conta</button>
       </div>
       <input type="file" id="cArquivo" accept="application/json" hidden>
@@ -517,6 +519,43 @@ const fdsRestantes = ym => fdsDoMes(ym).filter(f => f.fim >= hojeISO());
 const orcamentoRestante = ym => fdsRestantes(ym).reduce((s,f)=> s + Math.max(0, state.cfg.tetoFds - gastoNoFds(f)), 0);
 const pendenciasAbertas = () => state.pendencias.filter(p=>!p.feito)
   .sort((a,b)=> (a.data+(a.hora||'99:99')).localeCompare(b.data+(b.hora||'99:99')));
+
+/* ===== memória de descrições =====
+   Guarda como VOCÊ costuma classificar cada coisa ("ifood" -> iFood no
+   PicPay) e usa isso para preencher o que a IA não soube. Fica em
+   state.cfg.memoria, criada sob demanda (não entra no CFG_PADRAO para
+   não virar objeto compartilhado entre sessões). */
+const LIMITE_MEMORIA = 60;
+const chaveMemoria = s => String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+
+function lembrarDescricao(descricao, categoria, metodo, peso){
+  const k = chaveMemoria(descricao);
+  if(k.length < 3) return;                       // "uber" sim, "tv" não
+  const mem = state.cfg.memoria = state.cfg.memoria || {};
+  const antes = mem[k] || { n:0 };
+  mem[k] = { cat: categoria || antes.cat || null, met: metodo || antes.met || null, n: antes.n + (peso||1) };
+  const chaves = Object.keys(mem);
+  if(chaves.length > LIMITE_MEMORIA){            // descarta o que menos se repetiu
+    chaves.sort((a,b)=> (mem[a].n - mem[b].n) || a.localeCompare(b))
+      .slice(0, chaves.length - LIMITE_MEMORIA).forEach(velha => delete mem[velha]);
+  }
+}
+/* Procura a descrição exata; se não achar, procura um termo conhecido que
+   apareça como palavra dentro dela ("ifood almoço" encontra "ifood"),
+   preferindo o termo mais específico. */
+function consultarMemoria(texto){
+  const mem = state.cfg.memoria || {}, k = chaveMemoria(texto);
+  if(!k) return null;
+  if(mem[k]) return { ...mem[k], termo:k };
+  let achado = null;
+  for(const termo of Object.keys(mem)){
+    const cerca = new RegExp('(^| )'+termo.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'( |$)');
+    if(cerca.test(k) && (!achado || termo.length > achado.termo.length)) achado = { ...mem[termo], termo };
+  }
+  return achado;
+}
+const totalMemoria = () => Object.keys(state.cfg.memoria || {}).length;
 
 const normCarteira = s => { s = String(s||'').trim(); return s ? s.charAt(0).toUpperCase()+s.slice(1) : ''; };
 function carteirasResumo(){
@@ -851,9 +890,24 @@ function setTipo(t){
   document.getElementById('wrapMet').style.display = t==='despesa' ? '' : 'none';
   document.getElementById('fCat').innerHTML = (t==='receita'?CAT_RECEITA:CAT_DESPESA).map(c=>`<option>${c}</option>`).join('');
 }
+/* enquanto você não mexer nesses dois campos, a memória pode preenchê-los */
+let mexeuCat = false, mexeuMet = false;
+document.getElementById('fCat').addEventListener('change', ()=>{ mexeuCat = true; });
+document.getElementById('fMet').addEventListener('change', ()=>{ mexeuMet = true; });
+document.getElementById('fDesc').addEventListener('input', ()=>{
+  if(tipoModal === 'pendencia') return;
+  const lembrado = consultarMemoria(document.getElementById('fDesc').value);
+  if(!lembrado) return;
+  const cats = tipoModal==='receita' ? CAT_RECEITA : CAT_DESPESA;
+  if(!mexeuCat && cats.includes(lembrado.cat)) document.getElementById('fCat').value = lembrado.cat;
+  if(!mexeuMet && tipoModal==='despesa' && (lembrado.met==='picpay'||lembrado.met==='conta'))
+    document.getElementById('fMet').value = lembrado.met;
+});
+
 function abrirModal(t){
   setTipo(t);
   ['fValor','fDesc','pTitulo','pHora','fCarteira'].forEach(id=>document.getElementById(id).value='');
+  mexeuCat = false; mexeuMet = false;
   document.getElementById('fData').value = hojeISO();
   document.getElementById('pData').value = hojeISO();
   document.getElementById('fMet').value = state.cfg.metodoPadrao;
@@ -870,12 +924,13 @@ document.getElementById('btnSalvar').onclick = ()=>{
   } else {
     const valor = parseFloat(String(document.getElementById('fValor').value).replace(',','.'));
     if(!valor || valor<=0){ toast('Informe um valor'); return; }
-    state.lancamentos.push({ id:uid(), tipo:tipoModal, valor,
-      descricao:document.getElementById('fDesc').value.trim(),
-      categoria:document.getElementById('fCat').value,
-      metodo: tipoModal==='despesa' ? document.getElementById('fMet').value : 'conta',
+    const descricao = document.getElementById('fDesc').value.trim();
+    const categoria = document.getElementById('fCat').value;
+    const metodo = tipoModal==='despesa' ? document.getElementById('fMet').value : 'conta';
+    state.lancamentos.push({ id:uid(), tipo:tipoModal, valor, descricao, categoria, metodo,
       carteira: normCarteira(document.getElementById('fCarteira').value) || null,
       data:document.getElementById('fData').value||hojeISO() });
+    lembrarDescricao(descricao, categoria, metodo, 1);
     toast(tipoModal==='receita'?'Entrada salva':'Gasto salvo');
   }
   document.getElementById('modal').hidden = true; salvar(); render();
@@ -896,6 +951,10 @@ function abrirCfg(){
   document.getElementById('cFixas').innerHTML = '';
   (state.cfg.comprometido||[]).forEach(c=>addFixa(c.nome, c.valor));
   document.getElementById('cConta').textContent = 'Sincronizando na nuvem como '+(user?.email||'—');
+  const n = totalMemoria();
+  document.getElementById('cMemoria').textContent = n
+    ? 'Memória de descrições: '+n+(n===1?' termo aprendido':' termos aprendidos')
+    : 'Memória de descrições: ainda aprendendo com o que você lança.';
   document.getElementById('modalCfg').hidden = false;
 }
 function addFixa(nome, valor){
@@ -926,6 +985,10 @@ document.getElementById('cExportar').onclick = ()=>{
   a.href = URL.createObjectURL(blob);
   a.download = 'painel-backup-'+hojeISO()+'.json';
   a.click(); URL.revokeObjectURL(a.href);
+};
+document.getElementById('cLimparMemoria').onclick = ()=>{
+  if(!totalMemoria()){ toast('A memória já está vazia.'); return; }
+  state.cfg.memoria = {}; salvar(); abrirCfg(); toast('Memória de descrições limpa.');
 };
 document.getElementById('cImportar').onclick = ()=> document.getElementById('cArquivo').click();
 document.getElementById('cArquivo').onchange = async e => {
@@ -1009,11 +1072,19 @@ function aplicar(res){
       state.pendencias.push({ id:uid(), titulo:a.titulo, data:a.data||hojeISO(), hora:a.hora||null, feito:false });
     } else if((a.tipo==='despesa'||a.tipo==='receita') && Number(a.valor)>0){
       const cats = a.tipo==='receita'?CAT_RECEITA:CAT_DESPESA;
+      const lembrado = consultarMemoria(a.descricao);
+      let categoria = cats.includes(a.categoria) ? a.categoria : 'Outros';
+      let metodo = a.tipo==='despesa' ? (a.metodo==='conta'?'conta':state.cfg.metodoPadrao) : 'conta';
+      // a memória preenche lacuna: entra quando a IA não soube classificar...
+      if(lembrado && categoria==='Outros' && cats.includes(lembrado.cat)) categoria = lembrado.cat;
+      // ...e corrige o método só no sentido seguro: "picpay" é o padrão do
+      // prompt (não diz nada), "conta" é a IA tendo lido pix/débito na frase.
+      if(lembrado && a.tipo==='despesa' && a.metodo!=='conta' && lembrado.met==='conta' && lembrado.n>=2) metodo = 'conta';
       state.lancamentos.push({ id:uid(), tipo:a.tipo, valor:Number(a.valor),
         descricao:a.descricao||'', data:a.data||hojeISO(),
-        categoria: cats.includes(a.categoria)?a.categoria:'Outros',
-        metodo: a.tipo==='despesa' ? (a.metodo==='conta'?'conta':state.cfg.metodoPadrao) : 'conta',
+        categoria, metodo,
         carteira: a.carteira ? normCarteira(a.carteira) : null });
+      lembrarDescricao(a.descricao, categoria, metodo, 1);
     } else if(a.tipo==='comprometido' && a.nome && Number(a.valor)>0){
       state.cfg.comprometido = [...(state.cfg.comprometido||[]), { nome:a.nome, valor:Number(a.valor) }];
     } else if(a.tipo==='corrigir' && a.alvo==='pendencia' && a.busca){
@@ -1033,6 +1104,8 @@ function aplicar(res){
       if(c.descricao) alvo.descricao = c.descricao;
       if(c.data) alvo.data = c.data;
       if(c.carteira !== undefined) alvo.carteira = c.carteira ? normCarteira(c.carteira) : null;
+      // correção é o sinal mais forte que existe: vale o dobro na memória
+      if(c.categoria || c.metodo) lembrarDescricao(alvo.descricao, alvo.categoria, alvo.metodo, 2);
     } else if(a.tipo==='excluir' && a.alvo==='pendencia' && a.busca){
       const alvo = encontrarPendencia(a.busca, a.data);
       if(!alvo){ avisos.push('Não encontrei "'+a.busca+'" na agenda pra excluir.'); return; }
@@ -1059,6 +1132,9 @@ async function interpretar(msg){
       orcamentoRestanteFinsDeSemana: orcamentoRestante(ym), diasSemGastar: streakLimpo() },
     gastosPorCategoria: porCategoria(ym),
     carteirasAtivas: carteirasResumo().map(c=>c.nome),
+    memoriaDescricoes: Object.entries(state.cfg.memoria || {})
+      .sort((a,b)=> b[1].n - a[1].n).slice(0,25)
+      .map(([termo,v])=>({ termo, categoria:v.cat, metodo:v.met })),
     ultimosLancamentos: state.lancamentos.slice(-40).map(l=>({t:l.tipo,v:l.valor,d:l.descricao,c:l.categoria,m:l.metodo,car:l.carteira||null,data:l.data})),
     pendenciasAbertas: pendenciasAbertas().map(x=>({titulo:x.titulo,data:x.data,hora:x.hora}))
   };
@@ -1080,6 +1156,7 @@ Regras:
 - Categorias de despesa: ${CAT_DESPESA.join(', ')}. Gasto com a Nicolly vai em "Nicolly". Delivery vai em "iFood".
 - Categorias de receita: ${CAT_RECEITA.join(', ')}.
 - "metodo": "picpay" para crédito/cartão/PicPay (padrão, a conta fica zerada) ou "conta" para pix, débito e dinheiro.
+- "memoriaDescricoes" nos DADOS é o histórico de como ESTE usuário já classificou cada coisa (ex.: termo "ifood" -> categoria iFood, método picpay). Quando a descrição da mensagem contiver um desses termos, use a mesma categoria e o mesmo método que ele já usou — a menos que ele diga o contrário agora ("paguei no pix" manda mais que a memória).
 - "carteira": só preencha se o usuário mencionar que o dinheiro é de uma reserva/bolso separado (ex.: "ganhei 100 de freela", "paguei o material com o dinheiro do freela", "isso sai da minha reserva de viagem"). Reaproveite um nome de carteirasAtivas nos DADOS quando for claramente a mesma carteira, mesmo que escrito diferente (maiúscula/minúscula, plural); só use um nome novo se for outra coisa. Se o usuário não mencionar carteira nenhuma, deixe "carteira" nulo — nunca invente uma.
 - "comprometido": use quando o usuário falar de uma dívida, parcela ou conta que só vai pagar com o PRÓXIMO salário (ex.: "tenho uma dívida de 200 no cartão pra pagar mês que vem", "separar 150 pro aluguel do mês que vem"). NÃO é um lançamento do mês atual, então nunca use "despesa" pra isso. O "nome" deve descrever o que o usuário disse (ex. "Dívida do cartão") — nunca invente marca/banco/detalhe que ele não mencionou.
   Cada "comprometido" é sempre um item NOVO na lista (compare com regras.comprometidoProximoSalario nos DADOS): nunca some o valor a um item existente nem reescreva um "nome" já usado, mesmo que pareça parecido — crie outro item com um "nome" que os diferencie (ex. "Dívida cartão" e "Dívida cartão (2)"), a menos que o usuário claramente peça pra corrigir/atualizar um item específico que já existe, aí sim reaproveite o mesmo "nome" para substituí-lo.
@@ -1118,9 +1195,13 @@ function fallback(msg){
   const receita = /recebi|entrou|salário|salario|caiu|pagaram/.test(t);
   const gasto = /gastei|paguei|comprei|ifood|uber|mercado|gasto/.test(t);
   if(valor > 0 && (gasto || receita)){
-    return { acoes:[{ tipo: receita?'receita':'despesa', valor, descricao: msg.slice(0,60), categoria:'Outros',
-      metodo: receita?'conta':state.cfg.metodoPadrao, data: hojeISO() }],
-      resposta:'IA indisponível — registrei '+brl(valor)+' em Outros. Ajuste a categoria no "+" se precisar.', erro:true };
+    // sem IA, a memória é a única classificação que sobra — melhor que "Outros"
+    const cats = receita ? CAT_RECEITA : CAT_DESPESA;
+    const lembrado = consultarMemoria(msg);
+    const categoria = (lembrado && cats.includes(lembrado.cat)) ? lembrado.cat : 'Outros';
+    return { acoes:[{ tipo: receita?'receita':'despesa', valor, descricao: msg.slice(0,60), categoria,
+      metodo: receita?'conta':((lembrado && lembrado.met==='conta') ? 'conta' : state.cfg.metodoPadrao), data: hojeISO() }],
+      resposta:'IA indisponível — registrei '+brl(valor)+' em '+categoria+'. Ajuste no "+" se precisar.', erro:true };
   }
   return { acoes:[], resposta:'Não consegui interpretar (IA indisponível ou offline). Use o botão "+".', erro:true };
 }
