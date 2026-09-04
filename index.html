@@ -297,6 +297,8 @@
     <h2 id="mTituloProj">Projeção</h2>
     <div class="contas" id="mProjecao"></div>
     <div id="mAviso"></div>
+    <h2 id="mTituloObs">Observações</h2>
+    <div id="mObs"></div>
     <h2>Para onde foi</h2>
     <div id="mCat"></div>
     <h2>Fins de semana</h2>
@@ -583,6 +585,73 @@ function carteirasResumo(){
   })).sort((a,b)=> b.saldo-a.saldo);
 }
 
+/* ===== observações automáticas (só conta, sem IA) =====
+   A comparação é sempre da MESMA janela de dias: o mês em curso vale até
+   hoje, e os meses anteriores também só até o mesmo dia. Sem isso, 4 dias
+   de setembro pareceriam uma queda gigante contra agostos inteiros. */
+const despesasAte = (ym, dia) => state.lancamentos.filter(l => l.tipo==='despesa'
+  && l.data.startsWith(ym) && Number(l.data.slice(8,10)) <= dia);
+const temHistorico = ym => state.lancamentos.some(l => l.tipo==='despesa' && l.data.startsWith(ym));
+function mesAtras(ym, n){
+  const [a,m] = ym.split('-').map(Number);
+  const d = new Date(a, m-1-n, 1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+
+function observacoes(ym){
+  const hoje = hojeISO(), corrente = ym === hoje.slice(0,7);
+  const dia = corrente ? Number(hoje.slice(8,10)) : diasNoMes(ym);
+  const anteriores = [1,2,3].map(n => mesAtras(ym,n)).filter(temHistorico);
+  const soma = (mes, filtro) => despesasAte(mes, dia).filter(filtro).reduce((s,x)=>s+x.valor,0);
+  const obs = [];
+
+  // 1) aderência ao teto — não precisa de comparação com outros meses
+  const fechados = fdsDoMes(ym).filter(f => f.fim < hoje);
+  if(fechados.length >= 2){
+    const dentro = fechados.filter(f => gastoNoFds(f) <= state.cfg.tetoFds).length;
+    obs.push({ peso:60, txt:'Você ficou dentro do teto em '+dentro+' de '+fechados.length
+      +' fins de semana já fechados'+(dentro===fechados.length?'.':' — os outros passaram.') });
+  }
+
+  if(anteriores.length < 2) return { obs, semBase:true };
+
+  // 2) a categoria que mais se mexeu, em reais
+  const agoraPorCat = {};
+  despesasAte(ym, dia).forEach(x=>{ const c=x.categoria||'Outros'; agoraPorCat[c]=(agoraPorCat[c]||0)+x.valor; });
+  const categorias = new Set(Object.keys(agoraPorCat));
+  anteriores.forEach(mes => despesasAte(mes, dia).forEach(x => categorias.add(x.categoria||'Outros')));
+
+  let maior = null;
+  categorias.forEach(cat=>{
+    const agora = agoraPorCat[cat] || 0;
+    const media = anteriores.reduce((s,mes)=> s + soma(mes, x=>(x.categoria||'Outros')===cat), 0) / anteriores.length;
+    const delta = agora - media;
+    if(Math.abs(delta) < 25) return;                                  // troco não é notícia
+    if(media > 0 && Math.abs(delta/media*100) < 25) return;
+    if(!maior || Math.abs(delta) > Math.abs(maior.delta)) maior = { cat, agora, media, delta };
+  });
+  if(maior){
+    const janela = 'nos últimos '+anteriores.length+' meses até o dia '+dia;
+    const txt = maior.media === 0
+      ? maior.cat+' apareceu neste período: '+brl(maior.agora)+' — não tinha '+janela+'.'
+      : maior.agora === 0
+        ? maior.cat+' sumiu: você gastava '+brl(maior.media)+' de média '+janela+'.'
+        : maior.cat+(maior.delta>0?' subiu ':' caiu ')+Math.round(Math.abs(maior.delta/maior.media*100))
+          +'% — '+brl(maior.agora)+' contra '+brl(maior.media)+' de média '+janela+'.';
+    obs.push({ peso: 100 + Math.abs(maior.delta), txt });
+  }
+
+  // 3) ritmo da fatura contra o próprio histórico
+  const credAgora = soma(ym, x=>x.metodo==='picpay');
+  const credMedia = anteriores.reduce((s,mes)=> s + soma(mes, x=>x.metodo==='picpay'), 0) / anteriores.length;
+  if(credMedia >= 50 && Math.abs(credAgora-credMedia) >= 50){
+    obs.push({ peso:80, txt:'O crédito está '+(credAgora>credMedia?'acelerando':'mais devagar')+': '
+      +brl(credAgora)+' contra '+brl(credMedia)+' de média até o dia '+dia+'.' });
+  }
+
+  return { obs: obs.sort((a,b)=> b.peso-a.peso).slice(0,3), semBase:false };
+}
+
 /* Meses do mês atual até o prazo, contando o atual: prazo neste mês = 1,
    prazo já passado = 0. */
 function mesesAte(ym){
@@ -736,6 +805,19 @@ function render(){
   b.hidden = atrasadas === 0; b.textContent = atrasadas;
 }
 
+function renderObs(ym){
+  const el = document.getElementById('mObs'), r = observacoes(ym);
+  if(!r.obs.length){
+    el.innerHTML = '<div class="vazio">'+(r.semBase
+      ? 'Ainda sem base de comparação. Com uns dois meses de histórico eu começo a apontar o que subiu e o que caiu.'
+      : 'Nada fora do padrão neste período.')+'</div>';
+    return;
+  }
+  el.innerHTML = '<div class="contas">'
+    + r.obs.map(o=>`<div class="conta"><div>${esc(o.txt)}</div></div>`).join('')
+    + '</div>';
+}
+
 function renderCarteiras(){
   const lista = carteirasResumo(), el = document.getElementById('carteirasLista');
   if(!lista.length){
@@ -865,6 +947,8 @@ function renderMes(){
   document.getElementById('mProjecao').innerHTML =
     linhas.map(([n,v,cls,nota]) => `<div class="conta"><div>${esc(n)}${nota?`<small>${esc(nota)}</small>`:''}</div><div class="cv ${cls}">${brl(v)}</div></div>`).join('')
     + `<div class="conta total"><div>Livre para as contas de ${esc(mesCurto(proxMes(mesRef)))}</div><div class="cv ${p.livre<0?'neg':''}">${brl(p.livre)}</div></div>`;
+
+  renderObs(mesRef);
 
   const orc = orcamentoRestante(mesRef), projFinal = p.livre - orc;
   document.getElementById('mAviso').innerHTML = '<div class="aviso '+(projFinal<0?'':'atencao')+'">Gastando tudo que planejou nos fins de semana que faltam ('
