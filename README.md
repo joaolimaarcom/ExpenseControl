@@ -112,7 +112,7 @@ Um documento por usuário em `painel/{uid}`:
 
 ```
 cfg          { salario, limite, tetoFds, sextaNoFds, metodoPadrao, comprometido[],
-               corPrimaria, corSecundaria }
+               corPrimaria, corSecundaria, memoria{}, metas{} }
 lancamentos  [{ id, tipo, valor, descricao, categoria, metodo, carteira, data }]
 pendencias   [{ id, titulo, data, hora, feito }]
 chat         [{ de, txt, erro }]   últimas 40
@@ -121,6 +121,18 @@ chat         [{ de, txt, erro }]   últimas 40
 `carteira` é um nome livre (ou `null`) que agrupa entradas e saídas de uma
 reserva específica — é o que a aba **Carteiras** soma para mostrar quanto
 entrou, quanto saiu e o saldo de cada uma.
+
+`metas` guarda o alvo de cada carteira: `{ "Viagem": { valor, prazo } }`,
+com `prazo` no formato `AAAA-MM`. A aba Carteiras usa isso para a barra de
+progresso e para calcular quanto falta por mês. Uma carteira que só tem
+meta, sem lançamento nenhum, também aparece — dá para planejar antes de
+gastar.
+
+`memoria` é como você costuma classificar cada coisa:
+`{ "ifood": { cat: "iFood", met: "picpay", n: 5 } }`, onde `n` é quantas
+vezes aquilo se repetiu (correção conta em dobro). Serve para três coisas:
+vai no contexto da IA, preenche o que ela deixou em "Outros", e classifica
+no parser offline. Dá para zerar em **⚙ > Limpar memória**.
 
 `metodo` é `picpay` (crédito, entra na fatura do mês seguinte) ou `conta`
 (pix/débito, sai agora). É a distinção que sustenta a projeção do próximo

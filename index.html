@@ -193,6 +193,12 @@
   .fixa input:first-child{flex:1} .fixa input:nth-child(2){width:100px}
   .fixa button{color:var(--muted);padding:0 6px}
   .addfixa{font-size:13px;color:var(--due);padding:4px 0;font-weight:600}
+  .metaForm{display:flex;gap:8px;align-items:center;margin:6px 0 4px}
+  .metaForm[hidden]{display:none}
+  .metaForm input{background:var(--card-2);border:1px solid var(--line);color:var(--ink);
+    border-radius:var(--r-sm);padding:9px 10px;font-size:14px;min-width:0;flex:1}
+  .metaForm button{color:var(--tag-cred-ink);font-weight:700;font-size:13px;padding:0 6px;flex:0 0 auto}
+  .metaForm button.rem{color:var(--out)}
   .rodape{margin-top:16px;padding-top:14px;border-top:1px solid var(--line-2);font-size:12.5px;color:var(--muted);line-height:1.6}
   .rodape button{font-size:12.5px;font-weight:600}
   #cExportar,#cImportar{color:var(--tag-cred-ink)}
@@ -291,6 +297,8 @@
     <h2 id="mTituloProj">Projeção</h2>
     <div class="contas" id="mProjecao"></div>
     <div id="mAviso"></div>
+    <h2 id="mTituloObs">Observações</h2>
+    <div id="mObs"></div>
     <h2>Para onde foi</h2>
     <div id="mCat"></div>
     <h2>Fins de semana</h2>
@@ -384,9 +392,11 @@
     </div>
     <div class="rodape">
       <div id="cConta">—</div>
+      <div id="cMemoria" style="margin-top:4px"></div>
       <div style="margin-top:8px;display:flex;gap:14px;flex-wrap:wrap">
         <button id="cExportar">Baixar backup</button>
         <button id="cImportar">Restaurar backup</button>
+        <button id="cLimparMemoria">Limpar memória</button>
         <button id="cSair">Sair da conta</button>
       </div>
       <input type="file" id="cArquivo" accept="application/json" hidden>
@@ -518,6 +528,43 @@ const orcamentoRestante = ym => fdsRestantes(ym).reduce((s,f)=> s + Math.max(0, 
 const pendenciasAbertas = () => state.pendencias.filter(p=>!p.feito)
   .sort((a,b)=> (a.data+(a.hora||'99:99')).localeCompare(b.data+(b.hora||'99:99')));
 
+/* ===== memória de descrições =====
+   Guarda como VOCÊ costuma classificar cada coisa ("ifood" -> iFood no
+   PicPay) e usa isso para preencher o que a IA não soube. Fica em
+   state.cfg.memoria, criada sob demanda (não entra no CFG_PADRAO para
+   não virar objeto compartilhado entre sessões). */
+const LIMITE_MEMORIA = 60;
+const chaveMemoria = s => String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+
+function lembrarDescricao(descricao, categoria, metodo, peso){
+  const k = chaveMemoria(descricao);
+  if(k.length < 3) return;                       // "uber" sim, "tv" não
+  const mem = state.cfg.memoria = state.cfg.memoria || {};
+  const antes = mem[k] || { n:0 };
+  mem[k] = { cat: categoria || antes.cat || null, met: metodo || antes.met || null, n: antes.n + (peso||1) };
+  const chaves = Object.keys(mem);
+  if(chaves.length > LIMITE_MEMORIA){            // descarta o que menos se repetiu
+    chaves.sort((a,b)=> (mem[a].n - mem[b].n) || a.localeCompare(b))
+      .slice(0, chaves.length - LIMITE_MEMORIA).forEach(velha => delete mem[velha]);
+  }
+}
+/* Procura a descrição exata; se não achar, procura um termo conhecido que
+   apareça como palavra dentro dela ("ifood almoço" encontra "ifood"),
+   preferindo o termo mais específico. */
+function consultarMemoria(texto){
+  const mem = state.cfg.memoria || {}, k = chaveMemoria(texto);
+  if(!k) return null;
+  if(mem[k]) return { ...mem[k], termo:k };
+  let achado = null;
+  for(const termo of Object.keys(mem)){
+    const cerca = new RegExp('(^| )'+termo.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'( |$)');
+    if(cerca.test(k) && (!achado || termo.length > achado.termo.length)) achado = { ...mem[termo], termo };
+  }
+  return achado;
+}
+const totalMemoria = () => Object.keys(state.cfg.memoria || {}).length;
+
 const normCarteira = s => { s = String(s||'').trim(); return s ? s.charAt(0).toUpperCase()+s.slice(1) : ''; };
 function carteirasResumo(){
   const mapa = {};
@@ -528,10 +575,104 @@ function carteirasResumo(){
     else if(x.tipo==='despesa') mapa[x.carteira].sai += x.valor;
     mapa[x.carteira].itens.push(x);
   });
+  // carteira que só tem meta ainda aparece, pra dar pra planejar antes de gastar
+  Object.keys(state.cfg.metas || {}).forEach(nome=>{
+    if(!mapa[nome]) mapa[nome] = { entra:0, sai:0, itens:[] };
+  });
   return Object.entries(mapa).map(([nome,d])=>({
     nome, entra:d.entra, sai:d.sai, saldo:d.entra-d.sai,
     itens: d.itens.slice().sort((a,b)=> b.data.localeCompare(a.data) || b.id.localeCompare(a.id))
   })).sort((a,b)=> b.saldo-a.saldo);
+}
+
+/* ===== observações automáticas (só conta, sem IA) =====
+   A comparação é sempre da MESMA janela de dias: o mês em curso vale até
+   hoje, e os meses anteriores também só até o mesmo dia. Sem isso, 4 dias
+   de setembro pareceriam uma queda gigante contra agostos inteiros. */
+const despesasAte = (ym, dia) => state.lancamentos.filter(l => l.tipo==='despesa'
+  && l.data.startsWith(ym) && Number(l.data.slice(8,10)) <= dia);
+const temHistorico = ym => state.lancamentos.some(l => l.tipo==='despesa' && l.data.startsWith(ym));
+function mesAtras(ym, n){
+  const [a,m] = ym.split('-').map(Number);
+  const d = new Date(a, m-1-n, 1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+
+function observacoes(ym){
+  const hoje = hojeISO(), corrente = ym === hoje.slice(0,7);
+  const dia = corrente ? Number(hoje.slice(8,10)) : diasNoMes(ym);
+  const anteriores = [1,2,3].map(n => mesAtras(ym,n)).filter(temHistorico);
+  const soma = (mes, filtro) => despesasAte(mes, dia).filter(filtro).reduce((s,x)=>s+x.valor,0);
+  const obs = [];
+
+  // 1) aderência ao teto — não precisa de comparação com outros meses
+  const fechados = fdsDoMes(ym).filter(f => f.fim < hoje);
+  if(fechados.length >= 2){
+    const dentro = fechados.filter(f => gastoNoFds(f) <= state.cfg.tetoFds).length;
+    obs.push({ peso:60, txt:'Você ficou dentro do teto em '+dentro+' de '+fechados.length
+      +' fins de semana já fechados'+(dentro===fechados.length?'.':' — os outros passaram.') });
+  }
+
+  if(anteriores.length < 2) return { obs, semBase:true };
+
+  // 2) a categoria que mais se mexeu, em reais
+  const agoraPorCat = {};
+  despesasAte(ym, dia).forEach(x=>{ const c=x.categoria||'Outros'; agoraPorCat[c]=(agoraPorCat[c]||0)+x.valor; });
+  const categorias = new Set(Object.keys(agoraPorCat));
+  anteriores.forEach(mes => despesasAte(mes, dia).forEach(x => categorias.add(x.categoria||'Outros')));
+
+  let maior = null;
+  categorias.forEach(cat=>{
+    const agora = agoraPorCat[cat] || 0;
+    const media = anteriores.reduce((s,mes)=> s + soma(mes, x=>(x.categoria||'Outros')===cat), 0) / anteriores.length;
+    const delta = agora - media;
+    if(Math.abs(delta) < 25) return;                                  // troco não é notícia
+    if(media > 0 && Math.abs(delta/media*100) < 25) return;
+    if(!maior || Math.abs(delta) > Math.abs(maior.delta)) maior = { cat, agora, media, delta };
+  });
+  if(maior){
+    const janela = 'nos últimos '+anteriores.length+' meses até o dia '+dia;
+    const txt = maior.media === 0
+      ? maior.cat+' apareceu neste período: '+brl(maior.agora)+' — não tinha '+janela+'.'
+      : maior.agora === 0
+        ? maior.cat+' sumiu: você gastava '+brl(maior.media)+' de média '+janela+'.'
+        : maior.cat+(maior.delta>0?' subiu ':' caiu ')+Math.round(Math.abs(maior.delta/maior.media*100))
+          +'% — '+brl(maior.agora)+' contra '+brl(maior.media)+' de média '+janela+'.';
+    obs.push({ peso: 100 + Math.abs(maior.delta), txt });
+  }
+
+  // 3) ritmo da fatura contra o próprio histórico
+  const credAgora = soma(ym, x=>x.metodo==='picpay');
+  const credMedia = anteriores.reduce((s,mes)=> s + soma(mes, x=>x.metodo==='picpay'), 0) / anteriores.length;
+  if(credMedia >= 50 && Math.abs(credAgora-credMedia) >= 50){
+    obs.push({ peso:80, txt:'O crédito está '+(credAgora>credMedia?'acelerando':'mais devagar')+': '
+      +brl(credAgora)+' contra '+brl(credMedia)+' de média até o dia '+dia+'.' });
+  }
+
+  return { obs: obs.sort((a,b)=> b.peso-a.peso).slice(0,3), semBase:false };
+}
+
+/* Meses do mês atual até o prazo, contando o atual: prazo neste mês = 1,
+   prazo já passado = 0. */
+function mesesAte(ym){
+  const [a1,m1] = hojeISO().slice(0,7).split('-').map(Number);
+  const [a2,m2] = String(ym||'').split('-').map(Number);
+  if(!a2 || !m2) return 0;
+  return (a2-a1)*12 + (m2-m1) + 1;
+}
+function metaCarteira(nome, saldo){
+  const m = (state.cfg.metas || {})[nome];
+  const alvo = Number(m && m.valor) || 0;
+  if(alvo <= 0) return null;
+  const falta = Math.max(0, alvo - saldo);
+  const r = { alvo, prazo: m.prazo || null, falta, batida: saldo >= alvo,
+              pct: Math.max(0, Math.min(100, saldo/alvo*100)), porMes: null, vencido: false };
+  if(r.prazo){
+    const meses = mesesAte(r.prazo);
+    r.vencido = meses <= 0 && !r.batida;
+    if(meses > 0 && falta > 0) r.porMes = falta / meses;
+  }
+  return r;
 }
 
 /* =====================================================================
@@ -664,22 +805,81 @@ function render(){
   b.hidden = atrasadas === 0; b.textContent = atrasadas;
 }
 
+function renderObs(ym){
+  const el = document.getElementById('mObs'), r = observacoes(ym);
+  if(!r.obs.length){
+    el.innerHTML = '<div class="vazio">'+(r.semBase
+      ? 'Ainda sem base de comparação. Com uns dois meses de histórico eu começo a apontar o que subiu e o que caiu.'
+      : 'Nada fora do padrão neste período.')+'</div>';
+    return;
+  }
+  el.innerHTML = '<div class="contas">'
+    + r.obs.map(o=>`<div class="conta"><div>${esc(o.txt)}</div></div>`).join('')
+    + '</div>';
+}
+
 function renderCarteiras(){
   const lista = carteirasResumo(), el = document.getElementById('carteirasLista');
   if(!lista.length){
     el.innerHTML = '<div class="vazio">Nenhuma carteira ainda. Marque a carteira ao registrar um gasto ou entrada, ou escreva algo como <b>ganhei 100 de freela, carteira freela</b> no campo abaixo.</div>';
     return;
   }
-  el.innerHTML = lista.map(c => `
+  // o índice (e não o nome) liga o DOM aos dados: nome de carteira é texto livre
+  el.innerHTML = lista.map((c,i) => {
+    const m = metaCarteira(c.nome, c.saldo);
+    const guardado = (state.cfg.metas || {})[c.nome] || {};
+    let plano = '';
+    if(m){
+      const nota = m.batida ? 'Meta atingida.'
+        : m.vencido        ? 'O prazo ('+nomeMes(m.prazo)+') passou e ainda faltam '+brl(m.falta)+'.'
+        : m.porMes         ? 'Faltam '+brl(m.falta)+' — '+brl(m.porMes)+' por mês até '+nomeMes(m.prazo)+'.'
+        :                    'Faltam '+brl(m.falta)+'.';
+      plano = `<div class="gauge" style="margin:0 0 8px"><i class="usado" style="width:${m.pct.toFixed(1)}%"></i></div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${esc(nota)}</div>`;
+    }
+    return `
     <h2>${esc(c.nome)}</h2>
-    <div class="contas" style="margin-bottom:12px">
+    <div class="contas" style="margin-bottom:10px">
       <div class="conta"><div>Entrou</div><div class="cv pos">${brl(c.entra)}</div></div>
       <div class="conta"><div>Saiu</div><div class="cv neg">${brl(c.sai)}</div></div>
-      <div class="conta total"><div>Saldo</div><div class="cv ${c.saldo<0?'neg':''}">${brl(c.saldo)}</div></div>
+      <div class="conta total"><div>Saldo${m?`<small>de ${brl(m.alvo)} da meta</small>`:''}</div><div class="cv ${c.saldo<0?'neg':''}">${brl(c.saldo)}</div></div>
     </div>
-    <div style="margin-bottom:20px">${c.itens.map(itemLanc).join('')}</div>
-  `).join('');
+    ${plano}
+    <button class="addfixa" data-abrir-meta="${i}">${m?'editar meta':'+ definir meta'}</button>
+    <div class="metaForm" data-form="${i}" hidden>
+      <input type="number" step="0.01" inputmode="decimal" placeholder="quanto juntar" value="${m?m.alvo:''}">
+      <input type="month" value="${esc(guardado.prazo||'')}">
+      <button data-salvar-meta="${i}">salvar</button>
+      ${m?`<button class="rem" data-limpar-meta="${i}">remover</button>`:''}
+    </div>
+    <div style="margin:10px 0 20px">${c.itens.map(itemLanc).join('')}</div>`;
+  }).join('');
   ligarLanc(el);
+  ligarMetas(el, lista);
+}
+
+function ligarMetas(root, lista){
+  const form = i => root.querySelector('.metaForm[data-form="'+i+'"]');
+  root.querySelectorAll('[data-abrir-meta]').forEach(b=>b.onclick=()=>{
+    const f = form(b.dataset.abrirMeta);
+    if(f) f.hidden = !f.hidden;
+  });
+  root.querySelectorAll('[data-salvar-meta]').forEach(b=>b.onclick=()=>{
+    const nome = (lista[b.dataset.salvarMeta]||{}).nome;
+    const ins = form(b.dataset.salvarMeta).querySelectorAll('input');
+    const valor = parseFloat(String(ins[0].value).replace(',','.'));
+    if(!nome) return;
+    if(!valor || valor <= 0){ toast('Informe quanto quer juntar'); return; }
+    state.cfg.metas = state.cfg.metas || {};
+    state.cfg.metas[nome] = { valor, prazo: ins[1].value || null };
+    salvar(); render(); toast('Meta salva');
+  });
+  root.querySelectorAll('[data-limpar-meta]').forEach(b=>b.onclick=()=>{
+    const nome = (lista[b.dataset.limparMeta]||{}).nome;
+    if(!nome || !state.cfg.metas) return;
+    delete state.cfg.metas[nome];
+    salvar(); render(); toast('Meta removida');
+  });
 }
 
 function renderHoje(){
@@ -747,6 +947,8 @@ function renderMes(){
   document.getElementById('mProjecao').innerHTML =
     linhas.map(([n,v,cls,nota]) => `<div class="conta"><div>${esc(n)}${nota?`<small>${esc(nota)}</small>`:''}</div><div class="cv ${cls}">${brl(v)}</div></div>`).join('')
     + `<div class="conta total"><div>Livre para as contas de ${esc(mesCurto(proxMes(mesRef)))}</div><div class="cv ${p.livre<0?'neg':''}">${brl(p.livre)}</div></div>`;
+
+  renderObs(mesRef);
 
   const orc = orcamentoRestante(mesRef), projFinal = p.livre - orc;
   document.getElementById('mAviso').innerHTML = '<div class="aviso '+(projFinal<0?'':'atencao')+'">Gastando tudo que planejou nos fins de semana que faltam ('
@@ -851,9 +1053,24 @@ function setTipo(t){
   document.getElementById('wrapMet').style.display = t==='despesa' ? '' : 'none';
   document.getElementById('fCat').innerHTML = (t==='receita'?CAT_RECEITA:CAT_DESPESA).map(c=>`<option>${c}</option>`).join('');
 }
+/* enquanto você não mexer nesses dois campos, a memória pode preenchê-los */
+let mexeuCat = false, mexeuMet = false;
+document.getElementById('fCat').addEventListener('change', ()=>{ mexeuCat = true; });
+document.getElementById('fMet').addEventListener('change', ()=>{ mexeuMet = true; });
+document.getElementById('fDesc').addEventListener('input', ()=>{
+  if(tipoModal === 'pendencia') return;
+  const lembrado = consultarMemoria(document.getElementById('fDesc').value);
+  if(!lembrado) return;
+  const cats = tipoModal==='receita' ? CAT_RECEITA : CAT_DESPESA;
+  if(!mexeuCat && cats.includes(lembrado.cat)) document.getElementById('fCat').value = lembrado.cat;
+  if(!mexeuMet && tipoModal==='despesa' && (lembrado.met==='picpay'||lembrado.met==='conta'))
+    document.getElementById('fMet').value = lembrado.met;
+});
+
 function abrirModal(t){
   setTipo(t);
   ['fValor','fDesc','pTitulo','pHora','fCarteira'].forEach(id=>document.getElementById(id).value='');
+  mexeuCat = false; mexeuMet = false;
   document.getElementById('fData').value = hojeISO();
   document.getElementById('pData').value = hojeISO();
   document.getElementById('fMet').value = state.cfg.metodoPadrao;
@@ -870,12 +1087,13 @@ document.getElementById('btnSalvar').onclick = ()=>{
   } else {
     const valor = parseFloat(String(document.getElementById('fValor').value).replace(',','.'));
     if(!valor || valor<=0){ toast('Informe um valor'); return; }
-    state.lancamentos.push({ id:uid(), tipo:tipoModal, valor,
-      descricao:document.getElementById('fDesc').value.trim(),
-      categoria:document.getElementById('fCat').value,
-      metodo: tipoModal==='despesa' ? document.getElementById('fMet').value : 'conta',
+    const descricao = document.getElementById('fDesc').value.trim();
+    const categoria = document.getElementById('fCat').value;
+    const metodo = tipoModal==='despesa' ? document.getElementById('fMet').value : 'conta';
+    state.lancamentos.push({ id:uid(), tipo:tipoModal, valor, descricao, categoria, metodo,
       carteira: normCarteira(document.getElementById('fCarteira').value) || null,
       data:document.getElementById('fData').value||hojeISO() });
+    lembrarDescricao(descricao, categoria, metodo, 1);
     toast(tipoModal==='receita'?'Entrada salva':'Gasto salvo');
   }
   document.getElementById('modal').hidden = true; salvar(); render();
@@ -896,6 +1114,10 @@ function abrirCfg(){
   document.getElementById('cFixas').innerHTML = '';
   (state.cfg.comprometido||[]).forEach(c=>addFixa(c.nome, c.valor));
   document.getElementById('cConta').textContent = 'Sincronizando na nuvem como '+(user?.email||'—');
+  const n = totalMemoria();
+  document.getElementById('cMemoria').textContent = n
+    ? 'Memória de descrições: '+n+(n===1?' termo aprendido':' termos aprendidos')
+    : 'Memória de descrições: ainda aprendendo com o que você lança.';
   document.getElementById('modalCfg').hidden = false;
 }
 function addFixa(nome, valor){
@@ -926,6 +1148,10 @@ document.getElementById('cExportar').onclick = ()=>{
   a.href = URL.createObjectURL(blob);
   a.download = 'painel-backup-'+hojeISO()+'.json';
   a.click(); URL.revokeObjectURL(a.href);
+};
+document.getElementById('cLimparMemoria').onclick = ()=>{
+  if(!totalMemoria()){ toast('A memória já está vazia.'); return; }
+  state.cfg.memoria = {}; salvar(); abrirCfg(); toast('Memória de descrições limpa.');
 };
 document.getElementById('cImportar').onclick = ()=> document.getElementById('cArquivo').click();
 document.getElementById('cArquivo').onchange = async e => {
@@ -1009,11 +1235,19 @@ function aplicar(res){
       state.pendencias.push({ id:uid(), titulo:a.titulo, data:a.data||hojeISO(), hora:a.hora||null, feito:false });
     } else if((a.tipo==='despesa'||a.tipo==='receita') && Number(a.valor)>0){
       const cats = a.tipo==='receita'?CAT_RECEITA:CAT_DESPESA;
+      const lembrado = consultarMemoria(a.descricao);
+      let categoria = cats.includes(a.categoria) ? a.categoria : 'Outros';
+      let metodo = a.tipo==='despesa' ? (a.metodo==='conta'?'conta':state.cfg.metodoPadrao) : 'conta';
+      // a memória preenche lacuna: entra quando a IA não soube classificar...
+      if(lembrado && categoria==='Outros' && cats.includes(lembrado.cat)) categoria = lembrado.cat;
+      // ...e corrige o método só no sentido seguro: "picpay" é o padrão do
+      // prompt (não diz nada), "conta" é a IA tendo lido pix/débito na frase.
+      if(lembrado && a.tipo==='despesa' && a.metodo!=='conta' && lembrado.met==='conta' && lembrado.n>=2) metodo = 'conta';
       state.lancamentos.push({ id:uid(), tipo:a.tipo, valor:Number(a.valor),
         descricao:a.descricao||'', data:a.data||hojeISO(),
-        categoria: cats.includes(a.categoria)?a.categoria:'Outros',
-        metodo: a.tipo==='despesa' ? (a.metodo==='conta'?'conta':state.cfg.metodoPadrao) : 'conta',
+        categoria, metodo,
         carteira: a.carteira ? normCarteira(a.carteira) : null });
+      lembrarDescricao(a.descricao, categoria, metodo, 1);
     } else if(a.tipo==='comprometido' && a.nome && Number(a.valor)>0){
       state.cfg.comprometido = [...(state.cfg.comprometido||[]), { nome:a.nome, valor:Number(a.valor) }];
     } else if(a.tipo==='corrigir' && a.alvo==='pendencia' && a.busca){
@@ -1033,6 +1267,8 @@ function aplicar(res){
       if(c.descricao) alvo.descricao = c.descricao;
       if(c.data) alvo.data = c.data;
       if(c.carteira !== undefined) alvo.carteira = c.carteira ? normCarteira(c.carteira) : null;
+      // correção é o sinal mais forte que existe: vale o dobro na memória
+      if(c.categoria || c.metodo) lembrarDescricao(alvo.descricao, alvo.categoria, alvo.metodo, 2);
     } else if(a.tipo==='excluir' && a.alvo==='pendencia' && a.busca){
       const alvo = encontrarPendencia(a.busca, a.data);
       if(!alvo){ avisos.push('Não encontrei "'+a.busca+'" na agenda pra excluir.'); return; }
@@ -1059,6 +1295,9 @@ async function interpretar(msg){
       orcamentoRestanteFinsDeSemana: orcamentoRestante(ym), diasSemGastar: streakLimpo() },
     gastosPorCategoria: porCategoria(ym),
     carteirasAtivas: carteirasResumo().map(c=>c.nome),
+    memoriaDescricoes: Object.entries(state.cfg.memoria || {})
+      .sort((a,b)=> b[1].n - a[1].n).slice(0,25)
+      .map(([termo,v])=>({ termo, categoria:v.cat, metodo:v.met })),
     ultimosLancamentos: state.lancamentos.slice(-40).map(l=>({t:l.tipo,v:l.valor,d:l.descricao,c:l.categoria,m:l.metodo,car:l.carteira||null,data:l.data})),
     pendenciasAbertas: pendenciasAbertas().map(x=>({titulo:x.titulo,data:x.data,hora:x.hora}))
   };
@@ -1080,6 +1319,7 @@ Regras:
 - Categorias de despesa: ${CAT_DESPESA.join(', ')}. Gasto com a Nicolly vai em "Nicolly". Delivery vai em "iFood".
 - Categorias de receita: ${CAT_RECEITA.join(', ')}.
 - "metodo": "picpay" para crédito/cartão/PicPay (padrão, a conta fica zerada) ou "conta" para pix, débito e dinheiro.
+- "memoriaDescricoes" nos DADOS é o histórico de como ESTE usuário já classificou cada coisa (ex.: termo "ifood" -> categoria iFood, método picpay). Quando a descrição da mensagem contiver um desses termos, use a mesma categoria e o mesmo método que ele já usou — a menos que ele diga o contrário agora ("paguei no pix" manda mais que a memória).
 - "carteira": só preencha se o usuário mencionar que o dinheiro é de uma reserva/bolso separado (ex.: "ganhei 100 de freela", "paguei o material com o dinheiro do freela", "isso sai da minha reserva de viagem"). Reaproveite um nome de carteirasAtivas nos DADOS quando for claramente a mesma carteira, mesmo que escrito diferente (maiúscula/minúscula, plural); só use um nome novo se for outra coisa. Se o usuário não mencionar carteira nenhuma, deixe "carteira" nulo — nunca invente uma.
 - "comprometido": use quando o usuário falar de uma dívida, parcela ou conta que só vai pagar com o PRÓXIMO salário (ex.: "tenho uma dívida de 200 no cartão pra pagar mês que vem", "separar 150 pro aluguel do mês que vem"). NÃO é um lançamento do mês atual, então nunca use "despesa" pra isso. O "nome" deve descrever o que o usuário disse (ex. "Dívida do cartão") — nunca invente marca/banco/detalhe que ele não mencionou.
   Cada "comprometido" é sempre um item NOVO na lista (compare com regras.comprometidoProximoSalario nos DADOS): nunca some o valor a um item existente nem reescreva um "nome" já usado, mesmo que pareça parecido — crie outro item com um "nome" que os diferencie (ex. "Dívida cartão" e "Dívida cartão (2)"), a menos que o usuário claramente peça pra corrigir/atualizar um item específico que já existe, aí sim reaproveite o mesmo "nome" para substituí-lo.
@@ -1118,9 +1358,13 @@ function fallback(msg){
   const receita = /recebi|entrou|salário|salario|caiu|pagaram/.test(t);
   const gasto = /gastei|paguei|comprei|ifood|uber|mercado|gasto/.test(t);
   if(valor > 0 && (gasto || receita)){
-    return { acoes:[{ tipo: receita?'receita':'despesa', valor, descricao: msg.slice(0,60), categoria:'Outros',
-      metodo: receita?'conta':state.cfg.metodoPadrao, data: hojeISO() }],
-      resposta:'IA indisponível — registrei '+brl(valor)+' em Outros. Ajuste a categoria no "+" se precisar.', erro:true };
+    // sem IA, a memória é a única classificação que sobra — melhor que "Outros"
+    const cats = receita ? CAT_RECEITA : CAT_DESPESA;
+    const lembrado = consultarMemoria(msg);
+    const categoria = (lembrado && cats.includes(lembrado.cat)) ? lembrado.cat : 'Outros';
+    return { acoes:[{ tipo: receita?'receita':'despesa', valor, descricao: msg.slice(0,60), categoria,
+      metodo: receita?'conta':((lembrado && lembrado.met==='conta') ? 'conta' : state.cfg.metodoPadrao), data: hojeISO() }],
+      resposta:'IA indisponível — registrei '+brl(valor)+' em '+categoria+'. Ajuste no "+" se precisar.', erro:true };
   }
   return { acoes:[], resposta:'Não consegui interpretar (IA indisponível ou offline). Use o botão "+".', erro:true };
 }
