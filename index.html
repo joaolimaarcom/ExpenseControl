@@ -217,6 +217,11 @@
   .porta p{color:var(--dark-muted);font-size:13px;margin:0 0 20px;line-height:1.55}
   .porta button{width:100%;background:#fff;color:var(--dark);border-radius:15px;padding:14px;font-weight:700;font-size:14.5px}
   .porta .alt{background:none;color:var(--accent);font-weight:600;margin-top:14px;font-size:13px}
+  .porta .portaErro{background:rgba(226,85,75,.14);border:1px solid rgba(226,85,75,.42);color:#FFB4AC;
+    border-radius:var(--r-sm);padding:11px 13px;font-size:13px;line-height:1.5;margin-bottom:16px;text-align:left}
+  .porta .portaErro[hidden]{display:none}
+  .porta .portaStatus{color:var(--dark-muted);font-size:13px;padding:14px 0 0}
+  .porta .portaStatus[hidden]{display:none}
   .porta .credito{margin-top:34px;font-size:11.5px;color:var(--dark-muted);letter-spacing:.03em}
   .porta .credito b{color:var(--accent);font-weight:700}
 
@@ -229,7 +234,7 @@
 </head>
 <body>
 
-<div class="porta" id="porta" hidden>
+<div class="porta" id="porta">
   <div class="cx">
     <div class="icone">🔒</div>
     <h1 id="portaTit">Painel</h1>
@@ -240,8 +245,10 @@
       <div class="feat"><span class="dot">▤</span> Acompanhamento inteligente de teto semanal</div>
     </div>
     <p id="portaTxt">Entre com sua conta Google para os dados sincronizarem entre o celular e o computador.</p>
-    <button id="btnEntrar">Entrar com Google</button>
-    <button class="alt" id="btnLocal">Usar só neste aparelho</button>
+    <div class="portaErro" id="portaErro" hidden></div>
+    <button id="btnEntrar" hidden>Entrar com Google</button>
+    <button class="alt" id="btnRetentar" hidden>Tentar de novo</button>
+    <div class="portaStatus" id="portaStatus">Conectando…</div>
     <div class="credito">Desenvolvido por <b>João Lucas</b></div>
   </div>
 </div>
@@ -528,17 +535,36 @@ function carteirasResumo(){
 }
 
 /* =====================================================================
-   camada de dados: Firestore quando logado, localStorage quando não
+   camada de dados: Firestore — login com Google é obrigatório.
+   O Firestore guarda um cache local próprio, então depois de entrar uma
+   vez o app segue funcionando offline e sincroniza quando a rede volta.
    ===================================================================== */
-let modo = 'indefinido';           // 'nuvem' | 'local'
+let modo = 'indefinido';           // 'nuvem' quando logado
 let db = null, auth = null, user = null, docRef = null, ignorarSnapshot = false;
 const elSinc = document.getElementById('sinc');
 const setSinc = (c,t) => { elSinc.className = 'sinc '+c; elSinc.title = t; };
 const tempoLimite = (p, ms) => Promise.race([p, new Promise((_,rej)=>setTimeout(()=>rej(new Error('tempo esgotado')), ms))]);
 
+function mostrarPorta(){
+  document.getElementById('porta').hidden = false;
+  document.getElementById('portaStatus').hidden = true;
+  document.getElementById('portaErro').hidden = true;
+  document.getElementById('btnEntrar').hidden = false;
+  document.getElementById('btnRetentar').hidden = true;
+}
+function falhaEntrada(msg){
+  document.getElementById('porta').hidden = false;
+  document.getElementById('portaStatus').hidden = true;
+  const err = document.getElementById('portaErro');
+  err.textContent = msg; err.hidden = false;
+  document.getElementById('btnEntrar').hidden = true;
+  document.getElementById('btnRetentar').hidden = false;
+  setSinc('erro','sem conexão com a nuvem');
+}
+
 async function iniciar(){
   const configurado = CONFIG.firebase.apiKey && !CONFIG.firebase.apiKey.startsWith('COLE');
-  if(!configurado){ entrarLocal('Firebase não configurado — rodando só neste aparelho.'); return; }
+  if(!configurado){ falhaEntrada('O Firebase não está configurado neste app, então não é possível entrar. Veja o README.'); return; }
   try{
     const [{ initializeApp }, fbAuth, fbStore] = await tempoLimite(Promise.all([
       import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
@@ -562,15 +588,17 @@ async function iniciar(){
         fbStore.onSnapshot(docRef, snap => {
           if(ignorarSnapshot) return;
           if(snap.exists()){ aplicarDoc(snap.data()); }
-          else { salvarAgora(); }
+          else { aproveitarDadosDoAparelho(); salvarAgora(); }
           render(); renderChat();
         }, () => setSinc('erro','erro de sincronização'));
-      } else if(modo !== 'local'){
-        document.getElementById('porta').hidden = false;
+      } else {
+        user = null; docRef = null; modo = 'indefinido';
+        setSinc('off','entre para sincronizar');
+        mostrarPorta();
       }
     });
   }catch(e){
-    entrarLocal('Não deu para carregar o Firebase. Rodando só neste aparelho.');
+    falhaEntrada('Não foi possível conectar à nuvem. Verifique sua internet e tente de novo.');
   }
 }
 function aplicarDoc(d){
@@ -579,34 +607,32 @@ function aplicarDoc(d){
   state.pendencias  = d.pendencias  || [];
   state.chat        = d.chat        || [];
 }
-function entrarLocal(msg){
-  modo = 'local';
-  document.getElementById('porta').hidden = true;
-  setSinc('off','só neste aparelho');
+/* Só na primeira entrada na nuvem: aproveita o que ficou de quando existia
+   o modo "usar só neste aparelho", para nada ser perdido na migração. */
+function aproveitarDadosDoAparelho(){
   try{
     const raw = localStorage.getItem(CHAVE_LOCAL);
-    if(raw) aplicarDoc(JSON.parse(raw));
+    if(!raw) return;
+    const d = JSON.parse(raw);
+    if((d.lancamentos||[]).length || (d.pendencias||[]).length){
+      aplicarDoc(d);
+      toast('Trouxemos para a sua conta os dados que estavam neste aparelho.');
+    }
   }catch(e){}
-  if(msg) toast(msg);
-  render(); renderChat();
 }
 
 let tSalvar;
 function salvar(){ clearTimeout(tSalvar); tSalvar = setTimeout(salvarAgora, 400); }
 async function salvarAgora(){
+  if(modo !== 'nuvem' || !docRef) return;   // sem login não existe onde salvar
   state.chat = state.chat.slice(-40);
   const payload = { cfg:state.cfg, lancamentos:state.lancamentos, pendencias:state.pendencias, chat:state.chat, atualizadoEm: Date.now() };
-  if(modo === 'nuvem' && docRef){
-    ignorarSnapshot = true;
-    try{
-      await window._fb.setDoc(docRef, payload);
-      setSinc('on','sincronizado');
-    }catch(e){ setSinc('erro','offline — salva quando voltar'); }
-    finally{ setTimeout(()=>{ ignorarSnapshot = false; }, 300); }
-  } else {
-    try{ localStorage.setItem(CHAVE_LOCAL, JSON.stringify(payload)); }
-    catch(e){ toast('Não deu para salvar neste aparelho.'); }
-  }
+  ignorarSnapshot = true;
+  try{
+    await window._fb.setDoc(docRef, payload);
+    setSinc('on','sincronizado');
+  }catch(e){ setSinc('erro','offline — salva quando voltar'); }
+  finally{ setTimeout(()=>{ ignorarSnapshot = false; }, 300); }
 }
 
 document.getElementById('btnEntrar').onclick = async ()=>{
@@ -614,9 +640,9 @@ document.getElementById('btnEntrar').onclick = async ()=>{
     const p = new window._fb.GoogleAuthProvider();
     try{ await window._fb.signInWithPopup(auth, p); }
     catch(e){ await window._fb.signInWithRedirect(auth, p); }
-  }catch(e){ toast('Não foi possível entrar. Tente "usar só neste aparelho".'); }
+  }catch(e){ toast('Não foi possível entrar. Tente de novo.'); }
 };
-document.getElementById('btnLocal').onclick = ()=> entrarLocal();
+document.getElementById('btnRetentar').onclick = ()=> location.reload();
 document.getElementById('cSair').onclick = async ()=>{
   if(auth && user){ await window._fb.signOut(auth); location.reload(); }
   else toast('Você não está logado.');
@@ -869,9 +895,7 @@ function abrirCfg(){
   document.getElementById('cCorSec').value = state.cfg.corSecundaria || CFG_PADRAO.corSecundaria;
   document.getElementById('cFixas').innerHTML = '';
   (state.cfg.comprometido||[]).forEach(c=>addFixa(c.nome, c.valor));
-  document.getElementById('cConta').textContent = modo==='nuvem'
-    ? 'Sincronizando na nuvem como '+(user?.email||'—')
-    : 'Modo local: os dados ficam só neste aparelho.';
+  document.getElementById('cConta').textContent = 'Sincronizando na nuvem como '+(user?.email||'—');
   document.getElementById('modalCfg').hidden = false;
 }
 function addFixa(nome, valor){

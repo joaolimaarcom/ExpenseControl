@@ -43,7 +43,7 @@ const CONFIG = {
     projectId:  "seu-projeto",
     appId:      "..."
   },
-  groq: { key: "...", model: "llama-3.3-70b-versatile" }
+  groq: { key: "...", model: "openai/gpt-oss-120b" }
 };
 ```
 
@@ -67,9 +67,15 @@ Abra a URL no Chrome → menu → **Adicionar à tela inicial**.
 No iPhone é pelo Safari → compartilhar → **Adicionar à Tela de Início**.
 Abre em tela cheia, sem barra de navegador, e funciona offline.
 
-Entre com o Google no primeiro acesso — é o que faz os dados aparecerem
-no celular e no computador. O botão "usar só neste aparelho" guarda em
-`localStorage` e **não sincroniza**.
+**O login com Google é obrigatório** — é o que faz os dados aparecerem no
+celular e no computador. Não existe modo "só neste aparelho": sem entrar,
+o app não abre.
+
+Depois de entrar uma vez, o app continua funcionando **offline**: o
+Firestore mantém um cache local próprio, serve os dados de lá e enfileira
+o que você lançar, sincronizando quando a rede volta. O que exige internet
+é a primeira entrada — e qualquer abertura em que o SDK do Firebase não
+esteja em cache, porque ele vem da CDN do Google (`gstatic.com`).
 
 ## Segurança — leia antes de subir
 
@@ -105,11 +111,16 @@ Sem isso o celular pode continuar servindo a versão antiga.
 Um documento por usuário em `painel/{uid}`:
 
 ```
-cfg          { salario, limite, tetoFds, sextaNoFds, metodoPadrao, comprometido[] }
-lancamentos  [{ id, tipo, valor, descricao, categoria, metodo, data }]
+cfg          { salario, limite, tetoFds, sextaNoFds, metodoPadrao, comprometido[],
+               corPrimaria, corSecundaria }
+lancamentos  [{ id, tipo, valor, descricao, categoria, metodo, carteira, data }]
 pendencias   [{ id, titulo, data, hora, feito }]
 chat         [{ de, txt, erro }]   últimas 40
 ```
+
+`carteira` é um nome livre (ou `null`) que agrupa entradas e saídas de uma
+reserva específica — é o que a aba **Carteiras** soma para mostrar quanto
+entrou, quanto saiu e o saldo de cada uma.
 
 `metodo` é `picpay` (crédito, entra na fatura do mês seguinte) ou `conta`
 (pix/débito, sai agora). É a distinção que sustenta a projeção do próximo
