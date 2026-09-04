@@ -3,7 +3,7 @@
    Chamadas para Firebase e Groq nunca são cacheadas.
    Ao publicar uma alteração, suba o VERSAO abaixo. */
 
-const VERSAO = 'painel-v3';
+const VERSAO = 'painel-v4';
 const SHELL = [
   './',
   './index.html',

@@ -111,8 +111,8 @@ Sem isso o celular pode continuar servindo a versão antiga.
 Um documento por usuário em `painel/{uid}`:
 
 ```
-cfg          { salario, limite, tetoFds, sextaNoFds, metodoPadrao, comprometido[],
-               corPrimaria, corSecundaria, memoria{}, metas{} }
+cfg          { salario, tetoFds, sextaNoFds, metodoPadrao, comprometido[],
+               contas[], corPrimaria, corSecundaria, memoria{}, metas{} }
 lancamentos  [{ id, tipo, valor, descricao, categoria, metodo, carteira, data }]
 pendencias   [{ id, titulo, data, hora, feito }]
 chat         [{ de, txt, erro }]   últimas 40
@@ -134,9 +134,40 @@ vezes aquilo se repetiu (correção conta em dobro). Serve para três coisas:
 vai no contexto da IA, preenche o que ela deixou em "Outros", e classifica
 no parser offline. Dá para zerar em **⚙ > Limpar memória**.
 
-`metodo` é `picpay` (crédito, entra na fatura do mês seguinte) ou `conta`
-(pix/débito, sai agora). É a distinção que sustenta a projeção do próximo
-salário.
+## Contas, cartões e os dois jeitos de acompanhar
+
+`contas` é a lista de bancos e cartões, cadastrada em **⚙ Ajustes**:
+
+```
+{ id, nome, tipo: 'corrente', saldo, saldoData }   conta / pix / dinheiro
+{ id, nome, tipo: 'credito',  limite }             cartão de crédito
+```
+
+`metodo`, no lançamento, é o **id da conta** que pagou (ou onde a entrada
+caiu) — não é mais um par fixo `picpay`/`conta`. Os valores antigos são
+exatamente os ids que a migração cria, então nenhum lançamento precisou
+ser reescrito.
+
+O tipo da conta é o que decide a matemática, e daí saem dois jeitos de se
+acompanhar, que convivem no mesmo app:
+
+- **Por limite** (quem usa cartão): compra no crédito não sai do saldo
+  agora, acumula fatura e entra na projeção do próximo salário. O número
+  de cabeceira é o *limite livre*.
+- **Por saldo** (quem só usa conta): entrada e saída mexem no saldo na
+  hora. O número de cabeceira é o *saldo em conta*.
+
+A tela **Hoje** escolhe sozinha qual dos dois mostrar: se existe cartão
+com limite, mostra limite livre; se não, mostra saldo em conta. É a mesma
+pergunta — "quanto ainda posso gastar" — respondida pelo que a pessoa
+realmente usa.
+
+`saldoData` é a âncora do saldo: significa "neste dia eu tinha isso", e o
+saldo atual é esse valor mais tudo que entrou e saiu **depois** dele. Sem
+a âncora o número não teria sentido, porque os lançamentos antigos já
+estariam embutidos no saldo informado e seriam contados duas vezes — por
+isso conta sem `saldoData` aparece como `—` em vez de partir de zero.
+Reinformar o saldo é o jeito de reconciliar com o extrato do banco.
 
 Backup manual em **⚙ > Baixar backup** — JSON completo, restaurável na
 mesma tela.
