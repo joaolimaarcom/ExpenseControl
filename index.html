@@ -545,6 +545,17 @@ function saldoConta(c){
     .reduce((s,l)=> s + (l.tipo==='receita' ? l.valor : l.tipo==='despesa' ? -l.valor : 0),
             Number(c.saldo) || 0);
 }
+/* Saldo numa data passada. Devolve null quando não dá pra saber: sem âncora,
+   ou quando a data pedida é ANTERIOR à âncora — aí só daria pra responder
+   voltando no tempo por cima de um histórico que pode nem existir. */
+function saldoContaAte(c, ate){
+  if(!c || c.tipo !== 'corrente' || !c.saldoData) return null;
+  if(ate < c.saldoData) return null;
+  return state.lancamentos
+    .filter(l => l.metodo === c.id && l.data > c.saldoData && l.data <= ate)
+    .reduce((s,l)=> s + (l.tipo==='receita' ? l.valor : l.tipo==='despesa' ? -l.valor : 0),
+            Number(c.saldo) || 0);
+}
 /* Sem data informada não existe saldo: partir de zero daria um número
    inventado (um gasto de 40 viraria "saldo -40"). Então conta sem âncora
    não entra em soma nenhuma e aparece como "—" até alguém informar. */
@@ -860,43 +871,70 @@ function aplicarTema(){
 function render(){
   aplicarTema();
   document.getElementById('mesLabel').firstChild.nodeValue = nomeMes(mesRef).replace(/^./, c=>c.toUpperCase());
-  document.getElementById('mesSub').textContent = mesRef === hojeISO().slice(0,7) ? 'mês atual' : '';
+  sincronizarNavMes();
   renderHoje(); renderMes(); renderAgenda(); renderCarteiras(); renderContas();
   const atrasadas = pendenciasAbertas().filter(p=>p.data <= hojeISO()).length;
   const b = document.getElementById('bolha');
   b.hidden = atrasadas === 0; b.textContent = atrasadas;
 }
 
+/* Só Mês e Contas olham para o mês escolhido. Hoje, Agenda e Carteiras são
+   sempre "agora" — então nessas as setas ficam desligadas, em vez de dar a
+   impressão de que navegam e não mudar nada na tela. */
+const ABAS_COM_MES = ['mes','contas'];
+function sincronizarNavMes(){
+  const aplica = ABAS_COM_MES.includes(viewAtual);
+  ['prevMes','nextMes'].forEach(id=>{
+    const b = document.getElementById(id);
+    b.disabled = !aplica;
+    b.style.opacity = aplica ? '' : '.3';
+  });
+  document.getElementById('mesSub').textContent = !aplica
+    ? 'esta aba é sempre a de hoje'
+    : (mesRef === hojeISO().slice(0,7) ? 'mês atual' : '');
+}
+
 function renderContas(){
-  const el = document.getElementById('contasLista'), ym = hojeISO().slice(0,7);
+  const el = document.getElementById('contasLista');
   const corrente = contasCorrente(), credito = contasCredito();
+  const eDoMesAtual = mesRef === hojeISO().slice(0,7);
+  // no mês corrente o saldo é o de hoje; num mês passado, o do fim daquele mês
+  const ate = eDoMesAtual ? hojeISO() : mesRef+'-'+String(diasNoMes(mesRef)).padStart(2,'0');
   let html = '';
 
   if(corrente.length){
-    html += '<h2>Em conta</h2><div class="contas" style="margin-bottom:4px">'
-      + corrente.map(c=>{
-          if(!saldoAncorado(c)) return `<div class="conta"><div>${esc(c.nome)}<small>informe seu saldo em ⚙ para acompanhar</small></div>
-            <div class="cv" style="color:var(--muted)">—</div></div>`;
-          const s = saldoConta(c);
+    const saldos = corrente.map(c=>({ c, s: saldoContaAte(c, ate) }));
+    const conhecidos = saldos.filter(x=>x.s !== null);
+    html += '<h2>'+(eDoMesAtual ? 'Em conta hoje' : 'Em conta no fim de '+esc(mesCurto(mesRef)))+'</h2>'
+      + '<div class="contas" style="margin-bottom:4px">'
+      + saldos.map(({c,s})=>{
+          if(s === null){
+            const nota = c.saldoData
+              ? 'você só informou o saldo em '+diaCurto(c.saldoData)
+              : 'informe seu saldo em ⚙ para acompanhar';
+            return `<div class="conta"><div>${esc(c.nome)}<small>${esc(nota)}</small></div>
+              <div class="cv" style="color:var(--muted)">—</div></div>`;
+          }
           return `<div class="conta"><div>${esc(c.nome)}<small>informado ${esc(brl0(Number(c.saldo)||0))} em ${esc(diaCurto(c.saldoData))}</small></div>
             <div class="cv ${s<0?'neg':''}">${brl(s)}</div></div>`;
         }).join('')
-      + (contasComSaldo().length > 1
-          ? `<div class="conta total"><div>Somado</div><div class="cv ${saldoTotal()<0?'neg':''}">${brl(saldoTotal())}</div></div>`
+      + (conhecidos.length > 1
+          ? (()=>{ const t = conhecidos.reduce((acc,x)=>acc+x.s,0);
+                   return `<div class="conta total"><div>Somado</div><div class="cv ${t<0?'neg':''}">${brl(t)}</div></div>`; })()
           : '')
       + '</div>';
   }
 
   if(credito.length){
-    html += '<h2>No crédito</h2><div class="contas" style="margin-bottom:4px">'
+    html += '<h2>Fatura de '+esc(mesCurto(mesRef))+'</h2><div class="contas" style="margin-bottom:4px">'
       + credito.map(c=>{
-          const fat = faturaConta(c, ym), lim = Number(c.limite)||0, livre = lim - fat;
+          const fat = faturaConta(c, mesRef), lim = Number(c.limite)||0, livre = lim - fat;
           const nota = lim > 0 ? 'limite '+brl0(lim)+' · livre '+brl0(livre) : 'sem limite definido';
           return `<div class="conta"><div>${esc(c.nome)}<small>${esc(nota)}</small></div>
             <div class="cv ${livre<0?'neg':''}">${brl(fat)}</div></div>`;
         }).join('')
       + '</div><div style="font-size:12px;color:var(--muted);margin:8px 2px 0">'
-      + 'O valor é a fatura deste mês. Compras do crédito não saem do saldo agora — entram na projeção do próximo salário.</div>';
+      + 'Compras no crédito não saem do saldo agora — entram na projeção do próximo salário.</div>';
   }
 
   el.innerHTML = html || '<div class="vazio">Nenhuma conta cadastrada. Abra <b>⚙ Ajustes</b> e cadastre seu banco ou cartão.</div>';
@@ -1154,6 +1192,7 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
   viewAtual = b.dataset.view;
   document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-current', String(x===b)));
   ['hoje','mes','agenda','carteiras','contas'].forEach(v=>document.getElementById('v-'+v).hidden = v!==viewAtual);
+  sincronizarNavMes();
   window.scrollTo({top:0});
 });
 
