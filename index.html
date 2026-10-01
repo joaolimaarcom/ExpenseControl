@@ -189,10 +189,10 @@
   .acoes{display:flex;flex-direction:column;gap:10px;margin-top:10px}
   .acoes .prim{background:var(--accent);color:var(--accent-ink);border-radius:15px;padding:14px;font-weight:700;font-size:15px}
   .acoes .sec{border:1px solid var(--line);border-radius:15px;padding:14px;color:var(--ink-soft);font-weight:500}
-  .fixa{display:flex;gap:8px;margin-bottom:8px}
-  .fixa input{background:var(--card-2);border:1px solid var(--line);color:var(--ink);border-radius:var(--r-sm);padding:9px 10px}
-  .fixa input:first-child{flex:1} .fixa input:nth-child(2){width:100px}
-  .fixa button{color:var(--muted);padding:0 6px}
+  .fixa{border:1px solid var(--line-2);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;background:var(--card-2)}
+  .fixa .linha{margin-bottom:8px}
+  .fixa .linha:last-child{margin-bottom:0;align-items:flex-end}
+  .fixa .remFixa{color:var(--out);font-size:12px;font-weight:600;padding:0 4px 11px;flex:0 0 auto}
   .addfixa{font-size:13px;color:var(--due);padding:4px 0;font-weight:600}
   .metaForm{display:flex;gap:8px;align-items:center;margin:6px 0 4px}
   .metaForm[hidden]{display:none}
@@ -591,9 +591,21 @@ function streakLimpo(){
   while(gastoNoDia(d)===0 && n<400){ n++; d=somaDias(d,-1); }
   return n;
 }
-const comprometidoTotal = () => (state.cfg.comprometido||[]).reduce((s,x)=>s+(Number(x.valor)||0),0);
+/* Item comprometido pode ter um fim ("financiamento até 09/2027"). Sem isso
+   uma dívida que acaba continuaria descontando do salário para sempre.
+   A projeção de `ym` é sobre o salário de proxMes(ym), então é essa data
+   que decide se a parcela ainda existe. */
+const mesesEntre = (de, ate) => {
+  const [a1,m1] = String(de).split('-').map(Number);
+  const [a2,m2] = String(ate||'').split('-').map(Number);
+  if(!a2 || !m2) return 0;
+  return (a2-a1)*12 + (m2-m1) + 1;
+};
+const comprometidoAtivos = ym => (state.cfg.comprometido||[])
+  .filter(c => !c.ate || c.ate >= proxMes(ym));
+const comprometidoTotal = ym => comprometidoAtivos(ym).reduce((s,x)=>s+(Number(x.valor)||0),0);
 function projecao(ym){
-  const r = resumo(ym), comp = comprometidoTotal();
+  const r = resumo(ym), comp = comprometidoTotal(ym);
   return { salario: state.cfg.salario, fatura: r.credito, comp, livre: state.cfg.salario - r.credito - comp };
 }
 const fdsRestantes = ym => fdsDoMes(ym).filter(f => f.fim >= hojeISO());
@@ -1093,11 +1105,19 @@ function renderMes(){
   g.children[1].style.width = Math.min(100 - r.credito/base*100, p.comp/base*100)+'%';
 
   document.getElementById('mTituloProj').textContent = 'Projeção do salário de '+mesCurto(proxMes(mesRef));
+  const cartoes = contasCredito();
   const linhas = [
     ['Salário', p.salario, 'pos', 'entra no primeiro dia útil'],
-    ['Fatura do PicPay', -p.fatura, 'neg', 'o que já foi no crédito este mês']
+    [cartoes.length === 1 ? 'Fatura do '+cartoes[0].nome : 'Fatura do crédito',
+     -p.fatura, 'neg', 'o que já foi no crédito este mês']
   ];
-  (state.cfg.comprometido||[]).forEach(c => linhas.push([c.nome, -(Number(c.valor)||0), 'neg', '']));
+  comprometidoAtivos(mesRef).forEach(c => {
+    const faltam = c.ate ? mesesEntre(proxMes(mesRef), c.ate) : 0;
+    const nota = !faltam ? ''
+      : faltam === 1 ? 'última parcela'
+      : faltam+' parcelas · '+brl0(faltam*(Number(c.valor)||0))+' até '+nomeMes(c.ate);
+    linhas.push([c.nome, -(Number(c.valor)||0), 'neg', nota]);
+  });
   document.getElementById('mProjecao').innerHTML =
     linhas.map(([n,v,cls,nota]) => `<div class="conta"><div>${esc(n)}${nota?`<small>${esc(nota)}</small>`:''}</div><div class="cv ${cls}">${brl(v)}</div></div>`).join('')
     + `<div class="conta total"><div>Livre para as contas de ${esc(mesCurto(proxMes(mesRef)))}</div><div class="cv ${p.livre<0?'neg':''}">${brl(p.livre)}</div></div>`;
@@ -1266,7 +1286,7 @@ document.getElementById('btnSalvar').onclick = ()=>{
 document.getElementById('btnCfg').onclick = abrirCfg;
 document.getElementById('cFechar').onclick = ()=> document.getElementById('modalCfg').hidden = true;
 document.getElementById('modalCfg').onclick = e => { if(e.target.id==='modalCfg') e.target.hidden = true; };
-document.getElementById('cAdd').onclick = ()=> addFixa('', '');
+document.getElementById('cAdd').onclick = ()=> addFixa('', '', '');
 document.getElementById('cAddConta').onclick = ()=> addConta({ id:uid(), nome:'', tipo:'corrente', saldo:'', saldoData:hojeISO() });
 function abrirCfg(){
   document.getElementById('cSalario').value = state.cfg.salario;
@@ -1278,7 +1298,7 @@ function abrirCfg(){
   contas().forEach(addConta);
   atualizarContaPadrao();
   document.getElementById('cFixas').innerHTML = '';
-  (state.cfg.comprometido||[]).forEach(c=>addFixa(c.nome, c.valor));
+  (state.cfg.comprometido||[]).forEach(c=>addFixa(c.nome, c.valor, c.ate));
   document.getElementById('cConta').textContent = 'Sincronizando na nuvem como '+(user?.email||'—');
   const n = totalMemoria();
   document.getElementById('cMemoria').textContent = n
@@ -1356,13 +1376,20 @@ function lerContasDoEditor(){
   });
 }
 
-function addFixa(nome, valor){
+function addFixa(nome, valor, ate){
   const div = document.createElement('div');
   div.className = 'fixa';
-  div.innerHTML = `<input type="text" placeholder="nome" value="${esc(nome)}">
-    <input type="number" step="0.01" placeholder="0,00" value="${valor===''?'':valor}">
-    <button aria-label="Remover">×</button>`;
-  div.querySelector('button').onclick = ()=> div.remove();
+  div.innerHTML = `
+    <div class="linha">
+      <div class="fld"><input class="fNome" type="text" placeholder="nome" value="${esc(nome)}"></div>
+      <div class="fld" style="flex:0 0 108px"><input class="fValor" type="number" step="0.01" placeholder="0,00" value="${valor===''||valor==null?'':valor}"></div>
+    </div>
+    <div class="linha">
+      <div class="fld"><label>Até (deixe vazio se não acaba)</label>
+        <input class="fAte" type="month" value="${esc(ate||'')}"></div>
+      <button class="remFixa">remover</button>
+    </div>`;
+  div.querySelector('.remFixa').onclick = ()=> div.remove();
   document.getElementById('cFixas').appendChild(div);
 }
 document.getElementById('cSalvar').onclick = ()=>{
@@ -1376,10 +1403,11 @@ document.getElementById('cSalvar').onclick = ()=>{
   state.cfg.sextaNoFds = document.getElementById('cSexta').value==='sim';
   state.cfg.corPrimaria = document.getElementById('cCorPrim').value || CFG_PADRAO.corPrimaria;
   state.cfg.corSecundaria = document.getElementById('cCorSec').value || CFG_PADRAO.corSecundaria;
-  state.cfg.comprometido = [...document.querySelectorAll('#cFixas .fixa')].map(d=>{
-    const i = d.querySelectorAll('input');
-    return { nome: i[0].value.trim()||'Item', valor: parseFloat(i[1].value)||0 };
-  }).filter(x=>x.valor>0);
+  state.cfg.comprometido = [...document.querySelectorAll('#cFixas .fixa')].map(d=>({
+    nome:  d.querySelector('.fNome').value.trim() || 'Item',
+    valor: parseFloat(d.querySelector('.fValor').value) || 0,
+    ate:   d.querySelector('.fAte').value || null
+  })).filter(x=>x.valor>0);
   document.getElementById('modalCfg').hidden = true; salvar(); render(); toast('Ajustes salvos');
 };
 document.getElementById('cExportar').onclick = ()=>{
@@ -1493,7 +1521,7 @@ function aplicar(res){
         carteira: a.carteira ? normCarteira(a.carteira) : null });
       lembrarDescricao(a.descricao, categoria, metodo, 1);
     } else if(a.tipo==='comprometido' && a.nome && Number(a.valor)>0){
-      state.cfg.comprometido = [...(state.cfg.comprometido||[]), { nome:a.nome, valor:Number(a.valor) }];
+      state.cfg.comprometido = [...(state.cfg.comprometido||[]), { nome:a.nome, valor:Number(a.valor), ate: /^\d{4}-\d{2}$/.test(a.ate||'') ? a.ate : null }];
     } else if(a.tipo==='corrigir' && a.alvo==='pendencia' && a.busca){
       const alvo = encontrarPendencia(a.busca, a.data);
       if(!alvo){ avisos.push('Não encontrei "'+a.busca+'" na agenda pra corrigir.'); return; }
@@ -1537,7 +1565,7 @@ async function interpretar(msg){
       limite: c.tipo==='credito' ? (Number(c.limite)||0) : undefined })),
     contaPadrao: contaPadrao().id,
     regras: { salario: state.cfg.salario, limiteCreditoTotal: limiteTotal(), tetoPorFimDeSemana: state.cfg.tetoFds,
-      metaMeioDeSemana: 'gastar zero', comprometidoProximoSalario: state.cfg.comprometido },
+      metaMeioDeSemana: 'gastar zero', comprometidoProximoSalario: comprometidoAtivos(ym) },
     situacao: { faturaCreditoAtual: r.credito, limiteLivre: limiteTotal() - r.credito, saldoEmConta: Math.round(saldoTotal()), gastoTotalMes: r.sai,
       gastoNesteFimDeSemana: gastoNoFds(f), fimDeSemanaAtual: f, livreNoProximoSalario: p.livre,
       orcamentoRestanteFinsDeSemana: orcamentoRestante(ym), diasSemGastar: streakLimpo() },
@@ -1557,7 +1585,7 @@ Ações possíveis:
 {"tipo":"despesa","valor":38,"descricao":"ifood","categoria":"iFood","metodo":"picpay","carteira":null,"data":"AAAA-MM-DD"}
 {"tipo":"receita","valor":2875,"descricao":"salário","categoria":"Salário","carteira":null,"data":"AAAA-MM-DD"}
 {"tipo":"pendencia","titulo":"Reunião com Jamil","data":"AAAA-MM-DD","hora":"09:00"}
-{"tipo":"comprometido","nome":"(curto, descrevendo o que o usuário disse)","valor":200}
+{"tipo":"comprometido","nome":"(curto, descrevendo o que o usuário disse)","valor":200,"ate":"AAAA-MM ou omita"}
 {"tipo":"corrigir","alvo":"lancamento","busca":"(palavra que aparece na descrição/categoria do lançamento a corrigir)","data":"AAAA-MM-DD (se houver pista) ou omita","campos":{"metodo":"conta"}}
 {"tipo":"corrigir","alvo":"pendencia","busca":"(palavra que aparece no título do compromisso)","campos":{"hora":"16:00"}}
 {"tipo":"excluir","alvo":"lancamento","busca":"(palavra-chave)","data":"AAAA-MM-DD ou omita"}
@@ -1569,7 +1597,7 @@ Regras:
 - "metodo" é a CONTA que pagou (ou onde a entrada caiu). Use exatamente um dos ids listados em "contas" nos DADOS — nunca invente um id nem devolva o nome no lugar do id. Conta de tipo "credito" é cartão: não sai do saldo agora, vira fatura. Conta de tipo "corrente" é pix/débito/dinheiro: sai ou entra na hora. Se o usuário disser o nome do banco ("paguei no nubank"), escolha o id daquela conta. Se ele não disser nada, use o id de "contaPadrao". Entrada (receita) só pode cair em conta de tipo "corrente".
 - "memoriaDescricoes" nos DADOS é o histórico de como ESTE usuário já classificou cada coisa (ex.: termo "ifood" -> categoria iFood, método picpay). Quando a descrição da mensagem contiver um desses termos, use a mesma categoria e o mesmo método que ele já usou — a menos que ele diga o contrário agora ("paguei no pix" manda mais que a memória).
 - "carteira": só preencha se o usuário mencionar que o dinheiro é de uma reserva/bolso separado (ex.: "ganhei 100 de freela", "paguei o material com o dinheiro do freela", "isso sai da minha reserva de viagem"). Reaproveite um nome de carteirasAtivas nos DADOS quando for claramente a mesma carteira, mesmo que escrito diferente (maiúscula/minúscula, plural); só use um nome novo se for outra coisa. Se o usuário não mencionar carteira nenhuma, deixe "carteira" nulo — nunca invente uma.
-- "comprometido": use quando o usuário falar de uma dívida, parcela ou conta que só vai pagar com o PRÓXIMO salário (ex.: "tenho uma dívida de 200 no cartão pra pagar mês que vem", "separar 150 pro aluguel do mês que vem"). NÃO é um lançamento do mês atual, então nunca use "despesa" pra isso. O "nome" deve descrever o que o usuário disse (ex. "Dívida do cartão") — nunca invente marca/banco/detalhe que ele não mencionou.
+- "comprometido": use quando o usuário falar de uma dívida, parcela ou conta que só vai pagar com o PRÓXIMO salário (ex.: "tenho uma dívida de 200 no cartão pra pagar mês que vem", "separar 150 pro aluguel do mês que vem"). NÃO é um lançamento do mês atual, então nunca use "despesa" pra isso. O "nome" deve descrever o que o usuário disse (ex. "Dívida do cartão") — nunca invente marca/banco/detalhe que ele não mencionou. Se ele disser até quando a dívida vai ("até 09/27", "faltam 12 parcelas", "termina em setembro de 2027"), preencha "ate" com o mês da ÚLTIMA parcela no formato AAAA-MM; se ele não disser prazo, omita "ate" (a parcela passa a valer para sempre).
   Cada "comprometido" é sempre um item NOVO na lista (compare com regras.comprometidoProximoSalario nos DADOS): nunca some o valor a um item existente nem reescreva um "nome" já usado, mesmo que pareça parecido — crie outro item com um "nome" que os diferencie (ex. "Dívida cartão" e "Dívida cartão (2)"), a menos que o usuário claramente peça pra corrigir/atualizar um item específico que já existe, aí sim reaproveite o mesmo "nome" para substituí-lo.
 - "corrigir" (alvo "lancamento", padrão se "alvo" for omitido): use quando o usuário quiser CORRIGIR um lançamento que já existe (categoria errada, método errado, valor errado, esqueceu de marcar a carteira) em vez de criar um novo. Confira ultimosLancamentos nos DADOS pra achar o item certo antes de responder. "busca" é uma palavra-chave que aparece na descrição ou categoria do lançamento original (ex.: "halls"). "data" é a data do lançamento original — inclua sempre que o usuário der uma pista de tempo ("ontem", "sexta"), pra não corrigir a coisa errada; omita só se não houver pista nenhuma. "campos" só deve conter o que muda: "valor", "descricao", "categoria", "metodo" ("picpay" ou "conta") e/ou "carteira". Nunca crie uma ação "despesa" ou "receita" nova pra isso — "corrigir" edita o lançamento no lugar, não duplica.
 - "corrigir" com "alvo":"pendencia": use quando um compromisso que JÁ ESTÁ em pendenciasAbertas nos DADOS mudou de horário, data ou título (ex.: "a reunião com o Jamil foi pra 16h", "mudei o dentista pra sexta"). Confira pendenciasAbertas primeiro. "busca" é uma palavra do título original (ex.: "jamil"). "campos" só o que muda: "titulo", "data" e/ou "hora". ISSO É EDITAR NO LUGAR — nunca crie uma ação "pendencia" nova quando já existe uma em aberto claramente falando da mesma coisa; "pendencia" é só para compromissos que ainda não existem em pendenciasAbertas.
