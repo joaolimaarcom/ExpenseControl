@@ -62,7 +62,8 @@ requisições por dia).
    |---|---|---|
    | Secret | `GEMINI_API_KEY` | sua chave do AI Studio |
    | Variável | `ORIGEM_PERMITIDA` | `https://SEU-USUARIO.github.io` |
-   | Variável | `GEMINI_MODEL` | opcional — troca o modelo sem mexer no código |
+   | Variável | `GEMINI_MODEL` | opcional — troca o modelo principal |
+   | Variável | `GEMINI_MODELOS` | opcional — a cadeia inteira, separada por vírgula |
 
 4. Anote a URL que aparece: `https://painel-ia.SEU-SUBDOMINIO.workers.dev`.
 
@@ -106,6 +107,23 @@ O formato do Gemini vive só em `worker/chat.js`. O app manda
 `{sistema, historico, mensagem}` e espera `{texto}` de volta. Trocar o
 modelo é mudar a variável `GEMINI_MODEL`; trocar de provedor é mexer só
 nesse arquivo, sem tocar no `index.html`.
+
+### Quando o modelo está congestionado
+
+O Gemini devolve `503 high demand` nos horários de pico. O Worker tenta
+duas vezes no modelo principal e, se continuar, desce a cadeia:
+
+```
+gemini-3.5-flash → gemini-3.8-flash → gemini-3.5-flash-lite
+```
+
+Na prática a mensagem passa em menos de um segundo, pela segunda opção.
+`GEMINI_MODELOS` troca a cadeia inteira sem mexer no código.
+
+A repetição é só para o que é passageiro. Chave inválida falha na hora —
+insistir três vezes no mesmo erro só atrasaria a resposta. Modelo
+aposentado (404) não repete, mas **passa para o próximo da cadeia**: é o
+caso em que ter uma lista salva o app sozinho.
 
 ## 4. Preencher a config
 

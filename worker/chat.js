@@ -24,6 +24,31 @@ const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions'
 const MODELO_PADRAO = 'gemini-3.5-flash';
 const MAX_MENSAGEM = 4000;
 
+/* Quando o modelo principal está congestionado (503), insistir nele é
+   esperar na mesma fila. A cadeia tenta outra geração e, por último, o
+   lite — que é o menos disputado. Dá para trocar sem mexer no código
+   pela variável GEMINI_MODELOS, separada por vírgula. */
+const CADEIA_PADRAO = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+const TENTATIVAS_POR_MODELO = 2;
+const ESPERA_MS = 700;
+
+// Insistir só adianta no que é passageiro: fila cheia, pico, instabilidade.
+const PASSAGEIRO = new Set([408, 429, 500, 502, 503, 504]);
+
+// 404 é modelo que não existe mais. Repetir nele é inútil, mas é justamente
+// o caso em que o próximo da cadeia salva — foi assim que a Groq caiu, um
+// modelo aposentado de um dia para o outro.
+const SO_ESTE_MODELO = new Set([404, 400]);
+
+const dormir = ms => new Promise(r => setTimeout(r, ms));
+
+function cadeiaModelos(env){
+  if(env.GEMINI_MODELOS)
+    return String(env.GEMINI_MODELOS).split(',').map(s => s.trim()).filter(Boolean);
+  const principal = env.GEMINI_MODEL || MODELO_PADRAO;
+  return [principal, ...CADEIA_PADRAO.filter(m => m !== principal)];
+}
+
 const listaOrigens = env => String(env.ORIGEM_PERMITIDA || '')
   .split(',').map(s => s.trim()).filter(Boolean);
 
@@ -132,27 +157,55 @@ export default {
         '\n\nNova mensagem do usuário:\n' + mensagem
       : mensagem;
 
-    let resposta;
-    try{
-      resposta = await fetch(ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-        body: JSON.stringify({
-          model: env.GEMINI_MODEL || MODELO_PADRAO,
-          system_instruction: typeof sistema === 'string' ? sistema : undefined,
-          input,
-          response_format: { type: 'text', mime_type: 'application/json' }
-        })
-      });
-    }catch(e){
-      return json({ erro: 'Não consegui falar com o Gemini.', detalhe: String(e).slice(0,200) }, 502, origem, env);
+    const pedido = modelo => ({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+      body: JSON.stringify({
+        model: modelo,
+        system_instruction: typeof sistema === 'string' ? sistema : undefined,
+        input,
+        response_format: { type: 'text', mime_type: 'application/json' }
+      })
+    });
+
+    let bruto = '', ultimoErro = null;
+    percorrer:
+    for(const modelo of cadeiaModelos(env)){
+      for(let tentativa = 1; tentativa <= TENTATIVAS_POR_MODELO; tentativa++){
+        let resposta;
+        try{
+          resposta = await fetch(ENDPOINT, pedido(modelo));
+        }catch(e){
+          ultimoErro = { status: 0, modelo, detalhe: String(e).slice(0,200) };
+          await dormir(ESPERA_MS * tentativa);
+          continue;
+        }
+
+        const corpoResp = await resposta.text();
+        if(resposta.ok){ bruto = corpoResp; ultimoErro = null; break percorrer; }
+
+        ultimoErro = { status: resposta.status, modelo, detalhe: corpoResp.slice(0,300) };
+
+        // chave, cota da conta ou corpo malformado: errado para todo
+        // modelo, então parar aqui é o que evita três vezes o mesmo erro
+        const chaveRuim = /api[ _]?key|credential|permission|unauthenticated/i.test(corpoResp);
+        if(resposta.status === 401 || resposta.status === 403 || chaveRuim) break percorrer;
+
+        if(SO_ESTE_MODELO.has(resposta.status)) break;   // próximo modelo
+        if(!PASSAGEIRO.has(resposta.status)) break percorrer;
+        if(tentativa < TENTATIVAS_POR_MODELO) await dormir(ESPERA_MS * tentativa);
+      }
     }
 
-    const bruto = await resposta.text();
-    if(!resposta.ok){
+    if(ultimoErro){
       // devolver o motivo real é o que permite descobrir chave inválida,
       // modelo aposentado ou cota estourada olhando a conversa no celular
-      return json({ erro: 'Gemini respondeu ' + resposta.status, detalhe: bruto.slice(0,300) }, 502, origem, env);
+      return json({
+        erro: ultimoErro.status
+          ? 'Gemini respondeu ' + ultimoErro.status + ' (' + ultimoErro.modelo + ')'
+          : 'Não consegui falar com o Gemini (' + ultimoErro.modelo + ')',
+        detalhe: ultimoErro.detalhe
+      }, 502, origem, env);
     }
 
     let dados;
