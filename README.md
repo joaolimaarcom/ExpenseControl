@@ -1,7 +1,9 @@
 # Painel — grana e pendências
 
 App de uma página para controlar gastos, limite de crédito e pendências do dia a dia.
-Roda no Cloudflare Pages, sincroniza no Firestore e instala como app no celular (PWA).
+O site fica no **GitHub Pages**, sincroniza no Firestore e instala como app no
+celular (PWA). A Cloudflare entra só para guardar a chave da IA — um Worker
+pequeno, sem site nenhum nele.
 
 ## Arquivos
 
@@ -11,7 +13,8 @@ Roda no Cloudflare Pages, sincroniza no Firestore e instala como app no celular 
 | `sw.js` | service worker — cache do shell, funciona offline |
 | `manifest.webmanifest` | PWA: nome, cores, ícones |
 | `icone-192.png` / `icone-512.png` | ícones da tela inicial |
-| `functions/api/chat.js` | proxy da IA (Cloudflare Pages Function) — guarda a chave |
+| `worker/chat.js` | proxy da IA (Cloudflare Worker) — guarda a chave do Gemini |
+| `worker/wrangler.toml` | configuração do Worker (nome, origem permitida) |
 | `firestore.rules` | regras de segurança do banco |
 
 ## 1. Firebase
@@ -31,61 +34,61 @@ Roda no Cloudflare Pages, sincroniza no Firestore e instala como app no celular 
 continua funcionando: o botão `+` faz lançamento manual e existe um
 parser local básico para "gastei/recebi".
 
-A chave **não fica no `index.html`**. Ela é um secret no Cloudflare e só
-o proxy em `functions/api/chat.js` a enxerga — veja a seção 4.
+A chave **não fica no `index.html`**. Ela vive como secret no Cloudflare e
+só o Worker da seção 3 a enxerga.
 
 Pegue a chave em [aistudio.google.com](https://aistudio.google.com/apikey).
 
-## 3. Preencher a config
+## 3. Subir o Worker que guarda a chave
 
-No topo do `<script type="module">` do `index.html` só ficam dados
-públicos — nenhuma chave de IA:
+O site é estático e fica no GitHub Pages — lá não existe servidor para
+esconder nada, então qualquer chave no `index.html` estaria à vista de
+quem abrisse o código. O Worker resolve isso: é o único lugar que conhece
+a chave. O app manda a frase, o Worker fala com o Gemini e devolve só a
+resposta.
 
-```js
-const CONFIG = {
-  firebase: {
-    apiKey:     "...",
-    authDomain: "seu-projeto.firebaseapp.com",
-    projectId:  "seu-projeto",
-    appId:      "..."
-  },
-  ia: { proxy: "/api/chat" }
-};
-```
+São 20 linhas de configuração e o plano de graça sobra (100 mil
+requisições por dia).
 
-## 4. Publicar no Cloudflare Pages
-
-O site e o proxy da IA vão juntos: o Pages serve os arquivos estáticos e
-executa o que está em `functions/` como Worker, no mesmo domínio. Por isso
-o app chama `/api/chat` sem CORS e sem um segundo deploy.
+**Pelo painel**, que é o caminho sem instalar nada:
 
 1. [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages**
-   → **Create** → **Pages** → **Connect to Git** → escolha este repositório.
-2. Build: **nenhum**. Framework preset `None`, build command vazio,
-   output directory `/` (a raiz). É um site estático.
-3. Depois do primeiro deploy, em **Settings > Variables and secrets**,
-   adicione como **Secret**:
+   → **Create** → **Workers** → **Create Worker**. Nome: `painel-ia`.
+2. **Deploy** no código de exemplo, depois **Edit code**: apague tudo e
+   cole o conteúdo de `worker/chat.js`. **Deploy** de novo.
+3. **Settings > Variables and secrets**:
 
-   | Nome | Valor |
-   |---|---|
-   | `GEMINI_API_KEY` | sua chave do AI Studio |
-   | `GEMINI_MODEL` | opcional — troca o modelo sem mexer no código |
+   | Tipo | Nome | Valor |
+   |---|---|---|
+   | Secret | `GEMINI_API_KEY` | sua chave do AI Studio |
+   | Variável | `ORIGEM_PERMITIDA` | `https://SEU-USUARIO.github.io` |
+   | Variável | `GEMINI_MODEL` | opcional — troca o modelo sem mexer no código |
 
-4. **Redeploy** (secret novo só vale no deploy seguinte).
-5. No Firebase, **Authentication > Settings > Domínios autorizados**,
-   adicione o domínio do Pages (`seu-projeto.pages.dev`). Sem isso o login
-   com Google falha em produção.
+4. Anote a URL que aparece: `https://painel-ia.SEU-SUBDOMINIO.workers.dev`.
 
-### Conferir se o proxy subiu
+**Pelo terminal**, se preferir:
 
-Abra `https://seu-projeto.pages.dev/api/chat` no navegador. Deve responder:
-
-```json
-{ "ok": true, "chaveConfigurada": true, "modelo": "gemini-3.5-flash" }
+```bash
+cd worker
+npx wrangler deploy
+npx wrangler secret put GEMINI_API_KEY
 ```
 
-`chaveConfigurada: false` significa que o secret não está lá, ou que
-faltou o redeploy.
+`ORIGEM_PERMITIDA` já está no `wrangler.toml` — troque pelo seu usuário
+antes do deploy. A chave **nunca** entra nesse arquivo: ele vai para o
+repositório público.
+
+### Conferir se o Worker subiu
+
+Abra a URL dele no navegador. Deve responder:
+
+```json
+{ "ok": true, "chaveConfigurada": true, "modelo": "gemini-3.5-flash",
+  "origensPermitidas": ["https://SEU-USUARIO.github.io"] }
+```
+
+`chaveConfigurada: false` significa que o secret não está lá. Se vier um
+`aviso` sobre `ORIGEM_PERMITIDA`, o Worker está aberto para qualquer site.
 
 Para testar a chave direto no Gemini, sem passar pelo app:
 
@@ -99,12 +102,46 @@ Se esse curl falhar, o problema é a chave ou o modelo — não o app.
 
 ### Trocar de modelo ou de provedor
 
-O formato do Gemini vive só em `functions/api/chat.js`. O app manda
+O formato do Gemini vive só em `worker/chat.js`. O app manda
 `{sistema, historico, mensagem}` e espera `{texto}` de volta. Trocar o
-modelo é mudar o secret `GEMINI_MODEL`; trocar de provedor é mexer só
+modelo é mudar a variável `GEMINI_MODEL`; trocar de provedor é mexer só
 nesse arquivo, sem tocar no `index.html`.
 
-## 5. Instalar no celular
+## 4. Preencher a config
+
+No topo do `<script type="module">` do `index.html` só ficam dados
+públicos — nenhuma chave de IA:
+
+```js
+const CONFIG = {
+  firebase: {
+    apiKey:     "...",
+    authDomain: "seu-projeto.firebaseapp.com",
+    projectId:  "seu-projeto",
+    appId:      "..."
+  },
+  ia: { proxy: "https://painel-ia.SEU-SUBDOMINIO.workers.dev" }
+};
+```
+
+`proxy` é a URL completa do Worker da seção 3. Enquanto ela não estiver
+preenchida, o chat avisa que o proxy não foi configurado e cai no parser
+local.
+
+## 5. Publicar no GitHub Pages
+
+1. No repositório: **Settings > Pages** → Source: **Deploy from a branch**
+   → branch `main`, pasta `/ (root)` → **Save**.
+2. Em um ou dois minutos o site está em
+   `https://SEU-USUARIO.github.io/NOME-DO-REPO/`.
+3. No Firebase, **Authentication > Settings > Domínios autorizados**,
+   adicione `SEU-USUARIO.github.io`. Sem isso o login com Google falha em
+   produção.
+
+Não existe build: os arquivos da raiz são servidos como estão. Publicar é
+dar `git push` na `main`.
+
+## 6. Instalar no celular
 
 Abra a URL no Chrome → menu → **Adicionar à tela inicial**.
 No iPhone é pelo Safari → compartilhar → **Adicionar à Tela de Início**.
@@ -129,14 +166,15 @@ lê seu documento sem estar logado com a sua conta.
 
 A **chave da IA** era o ponto fraco: ela ficava no `index.html`, visível em
 repositório público, e quem achasse gastaria a cota. Isso acabou — ela
-agora é um secret no Cloudflare e só o proxy a enxerga. Nenhuma chave de
-IA sai mais no navegador.
+agora é um secret no Worker da Cloudflare e nem o navegador nem o
+repositório a enxergam.
 
-O proxy aceita apenas requisições da própria origem. Isso corta uso por
+O Worker só responde a quem vem de `ORIGEM_PERMITIDA`. Isso corta uso por
 outro site, mas não impede alguém que descubra a URL de chamar o endpoint
-direto (uma requisição fora do navegador não manda `Origin`). O risco é
-cota, não dado — se virar problema, o caminho é pôr o Cloudflare Access
-ou um rate limit na frente.
+direto: um `curl` não manda `Origin`, e a checagem não teria como saber a
+diferença. O risco é cota, não dado — o Worker não enxerga seus
+lançamentos, só a frase que você digitou no chat. Se virar problema, o
+caminho é pôr o Cloudflare Access ou um rate limit na frente.
 
 **Se você já publicou a chave antiga da Groq em commit, revogue-a.** Tirar
 do código não tira do histórico do git.
@@ -147,7 +185,7 @@ O service worker guarda o shell em cache. Ao publicar mudança no `index.html`,
 suba a versão em `sw.js`:
 
 ```js
-const VERSAO = 'painel-v2';
+const VERSAO = 'painel-v8';
 ```
 
 Sem isso o celular pode continuar servindo a versão antiga.

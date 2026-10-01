@@ -1,0 +1,17 @@
+# Deploy:  cd worker && npx wrangler deploy
+# Segredo: npx wrangler secret put GEMINI_API_KEY
+#
+# A chave NÃO entra aqui — este arquivo vai para o repositório público.
+# Só secret (pelo comando acima) ou variável no painel do Worker.
+
+name = "painel-ia"
+main = "chat.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# Origem do site no GitHub Pages — só ela pode chamar este Worker.
+# É o domínio puro, sem o caminho do repositório.
+ORIGEM_PERMITIDA = "https://joaolimaarcom.github.io"
+
+# Opcional: troca o modelo sem mexer no código.
+# GEMINI_MODEL = "gemini-3.8-flash"

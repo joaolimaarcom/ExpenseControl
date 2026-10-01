@@ -1,9 +1,9 @@
 /* Painel — service worker
    Estratégia: shell em cache com revalidação em segundo plano.
-   Chamadas para Firebase e Groq nunca são cacheadas.
+   Chamadas para Firebase e para o proxy da IA nunca são cacheadas.
    Ao publicar uma alteração, suba o VERSAO abaixo. */
 
-const VERSAO = 'painel-v7';
+const VERSAO = 'painel-v8';
 const SHELL = [
   './',
   './index.html',
@@ -32,7 +32,7 @@ self.addEventListener('fetch', e => {
 
   const url = new URL(req.url);
   const externo = url.origin !== self.location.origin;
-  const dinamico = /googleapis|gstatic|firebase|groq/.test(url.hostname);
+  const dinamico = /googleapis|gstatic|firebase|workers\.dev/.test(url.hostname);
 
   // rede direta para APIs e SDKs
   if (dinamico) return;

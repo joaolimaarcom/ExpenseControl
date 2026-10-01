@@ -437,10 +437,10 @@ const CONFIG = {
     messagingSenderId: "313267653893",
     appId: "1:313267653893:web:cdef4ceafb775f9e85fb6c"
   },
-  /* A IA é chamada pelo proxy em functions/api/chat.js, no mesmo domínio.
-     A chave fica como secret no Cloudflare Pages e nunca vem para cá —
-     por isso não existe nenhuma chave de IA neste arquivo. */
-  ia: { proxy: "/api/chat" }
+  /* O site fica no GitHub Pages; a IA é chamada por um Cloudflare Worker
+     (worker/chat.js) que guarda a chave. Cole aqui a URL do seu Worker —
+     nenhuma chave de IA entra neste arquivo, é esse o ponto. */
+  ia: { proxy: "COLE_A_URL_DO_SEU_WORKER" }
 };
 
 /* ===================== tema (claro/escuro) ===================== */
@@ -1439,7 +1439,7 @@ function toast(msg){
   clearTimeout(tToast); tToast = setTimeout(()=>t.hidden=true, 2800);
 }
 
-/* ===================== captura por texto (Groq) ===================== */
+/* ================== captura por texto (IA via Worker) ================== */
 const entrada = document.getElementById('entrada');
 entrada.addEventListener('input', ()=>{ entrada.style.height='auto'; entrada.style.height=Math.min(110,entrada.scrollHeight)+'px'; });
 entrada.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); enviar(); } });
@@ -1555,7 +1555,8 @@ function aplicar(res){
 }
 
 async function interpretar(msg){
-  if(!CONFIG.ia || !CONFIG.ia.proxy) throw new Error('proxy da IA não configurado');
+  const alvo = CONFIG.ia && CONFIG.ia.proxy;
+  if(!alvo || alvo.startsWith('COLE')) throw new Error('o proxy da IA ainda não foi configurado no index.html');
   const hoje = hojeISO(), ym = hoje.slice(0,7);
   const r = resumo(ym), p = projecao(ym), f = fdsDe(hoje);
   const ctx = {
@@ -1612,7 +1613,7 @@ DADOS: ${JSON.stringify(ctx)}`;
 
   const historico = state.chat.slice(-9, -1).map(m => ({ role: m.de==='eu' ? 'user' : 'assistant', content: m.txt }));
 
-  const resp = await fetch(CONFIG.ia.proxy, {
+  const resp = await fetch(alvo, {
     method:'POST',
     headers:{ 'Content-Type':'application/json' },
     body: JSON.stringify({ sistema, historico, mensagem: msg })
