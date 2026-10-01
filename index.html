@@ -437,10 +437,10 @@ const CONFIG = {
     messagingSenderId: "313267653893",
     appId: "1:313267653893:web:cdef4ceafb775f9e85fb6c"
   },
-  groq: {
-    key:   "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",
-    model: "openai/gpt-oss-120b"
-  }
+  /* A IA é chamada pelo proxy em functions/api/chat.js, no mesmo domínio.
+     A chave fica como secret no Cloudflare Pages e nunca vem para cá —
+     por isso não existe nenhuma chave de IA neste arquivo. */
+  ia: { proxy: "/api/chat" }
 };
 
 /* ===================== tema (claro/escuro) ===================== */
@@ -1468,7 +1468,7 @@ async function enviar(){
 
   let res;
   try{ res = await interpretar(txt); }
-  catch(e){ res = fallback(txt); }
+  catch(e){ res = fallback(txt, e); }
   finally{ load.remove(); document.getElementById('btnEnviar').disabled = false; }
 
   const avisos = aplicar(res);
@@ -1555,7 +1555,7 @@ function aplicar(res){
 }
 
 async function interpretar(msg){
-  if(!CONFIG.groq.key || CONFIG.groq.key.startsWith('COLE')) throw new Error('sem chave');
+  if(!CONFIG.ia || !CONFIG.ia.proxy) throw new Error('proxy da IA não configurado');
   const hoje = hojeISO(), ym = hoje.slice(0,7);
   const r = resumo(ym), p = projecao(ym), f = fdsDe(hoje);
   const ctx = {
@@ -1612,23 +1612,31 @@ DADOS: ${JSON.stringify(ctx)}`;
 
   const historico = state.chat.slice(-9, -1).map(m => ({ role: m.de==='eu' ? 'user' : 'assistant', content: m.txt }));
 
-  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const resp = await fetch(CONFIG.ia.proxy, {
     method:'POST',
-    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+CONFIG.groq.key },
-    body: JSON.stringify({
-      model: CONFIG.groq.model, temperature: 0.2, max_tokens: 900,
-      response_format: { type: 'json_object' },
-      messages: [ {role:'system', content:sistema}, ...historico, {role:'user', content:msg} ]
-    })
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ sistema, historico, mensagem: msg })
   });
-  if(!resp.ok) throw new Error('http '+resp.status);
-  const data = await resp.json();
-  const texto = data.choices?.[0]?.message?.content || '';
+  const data = await resp.json().catch(()=>({}));
+  if(!resp.ok){
+    // o proxy devolve o motivo real (chave inválida, modelo errado, cota);
+    // levar isso até a conversa é o que torna possível descobrir no celular
+    const e = new Error(data.erro || ('http '+resp.status));
+    e.detalhe = data.detalhe || '';
+    throw e;
+  }
+  const texto = data.texto || '';
   const limpo = texto.replace(/```json|```/g,'').trim();
   return JSON.parse(limpo.slice(limpo.indexOf('{'), limpo.lastIndexOf('}')+1));
 }
 
-function fallback(msg){
+function fallback(msg, erro){
+  /* O porquê vai junto: sem isso, chave errada, modelo inexistente e estar
+     sem internet viram todos o mesmo "IA indisponível", e não há como
+     descobrir qual é olhando só o celular. */
+  const motivo = erro && erro.message
+    ? ' (' + erro.message + (erro.detalhe ? ': ' + String(erro.detalhe).slice(0,120) : '') + ')'
+    : '';
   const t = msg.toLowerCase(), m = t.match(/(\d+[.,]?\d*)/);
   const valor = m ? parseFloat(m[1].replace(',','.')) : 0;
   const receita = /recebi|entrou|salário|salario|caiu|pagaram/.test(t);
@@ -1640,9 +1648,9 @@ function fallback(msg){
     const categoria = (lembrado && cats.includes(lembrado.cat)) ? lembrado.cat : 'Outros';
     return { acoes:[{ tipo: receita?'receita':'despesa', valor, descricao: msg.slice(0,60), categoria,
       metodo: receita?'conta':((lembrado && lembrado.met==='conta') ? 'conta' : state.cfg.metodoPadrao), data: hojeISO() }],
-      resposta:'IA indisponível — registrei '+brl(valor)+' em '+categoria+'. Ajuste no "+" se precisar.', erro:true };
+      resposta:'IA indisponível'+motivo+' — registrei '+brl(valor)+' em '+categoria+'. Ajuste no "+" se precisar.', erro:true };
   }
-  return { acoes:[], resposta:'Não consegui interpretar (IA indisponível ou offline). Use o botão "+".', erro:true };
+  return { acoes:[], resposta:'Não consegui interpretar'+motivo+'. Use o botão "+".', erro:true };
 }
 
 /* ===================== service worker ===================== */

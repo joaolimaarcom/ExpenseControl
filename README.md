@@ -1,16 +1,17 @@
 # Painel — grana e pendências
 
 App de uma página para controlar gastos, limite de crédito e pendências do dia a dia.
-Roda em GitHub Pages, sincroniza no Firestore e instala como app no celular (PWA).
+Roda no Cloudflare Pages, sincroniza no Firestore e instala como app no celular (PWA).
 
 ## Arquivos
 
 | arquivo | função |
 |---|---|
-| `index.html` | o app inteiro (UI, cálculos, Firestore, Groq) |
+| `index.html` | o app inteiro (UI, cálculos, Firestore, chamada da IA) |
 | `sw.js` | service worker — cache do shell, funciona offline |
 | `manifest.webmanifest` | PWA: nome, cores, ícones |
 | `icone-192.png` / `icone-512.png` | ícones da tela inicial |
+| `functions/api/chat.js` | proxy da IA (Cloudflare Pages Function) — guarda a chave |
 | `firestore.rules` | regras de segurança do banco |
 
 ## 1. Firebase
@@ -24,16 +25,21 @@ Roda em GitHub Pages, sincroniza no Firestore e instala como app no celular (PWA
    `apiKey`, `authDomain`, `projectId`, `appId`.
 6. **Firestore > Regras** — cole o conteúdo de `firestore.rules` e publique.
 
-## 2. Groq
+## 2. Gemini (a IA que lê o texto livre)
 
-Pegue uma chave em [console.groq.com](https://console.groq.com/keys).
-É o que interpreta o texto livre ("ifood 38", "amanhã 9h reunião").
-Sem ela o app continua funcionando: o botão `+` faz lançamento manual e
-existe um parser local básico para "gastei/recebi".
+É o que interpreta "ifood 38" ou "amanhã 9h reunião". Sem ela o app
+continua funcionando: o botão `+` faz lançamento manual e existe um
+parser local básico para "gastei/recebi".
+
+A chave **não fica no `index.html`**. Ela é um secret no Cloudflare e só
+o proxy em `functions/api/chat.js` a enxerga — veja a seção 4.
+
+Pegue a chave em [aistudio.google.com](https://aistudio.google.com/apikey).
 
 ## 3. Preencher a config
 
-No topo do `<script type="module">` do `index.html`:
+No topo do `<script type="module">` do `index.html` só ficam dados
+públicos — nenhuma chave de IA:
 
 ```js
 const CONFIG = {
@@ -43,23 +49,60 @@ const CONFIG = {
     projectId:  "seu-projeto",
     appId:      "..."
   },
-  groq: { key: "...", model: "openai/gpt-oss-120b" }
+  ia: { proxy: "/api/chat" }
 };
 ```
 
-## 4. Publicar
+## 4. Publicar no Cloudflare Pages
 
-```bash
-git init
-git add .
-git commit -m "painel"
-git branch -M main
-git remote add origin git@github.com:SEU-USUARIO/painel.git
-git push -u origin main
+O site e o proxy da IA vão juntos: o Pages serve os arquivos estáticos e
+executa o que está em `functions/` como Worker, no mesmo domínio. Por isso
+o app chama `/api/chat` sem CORS e sem um segundo deploy.
+
+1. [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages**
+   → **Create** → **Pages** → **Connect to Git** → escolha este repositório.
+2. Build: **nenhum**. Framework preset `None`, build command vazio,
+   output directory `/` (a raiz). É um site estático.
+3. Depois do primeiro deploy, em **Settings > Variables and secrets**,
+   adicione como **Secret**:
+
+   | Nome | Valor |
+   |---|---|
+   | `GEMINI_API_KEY` | sua chave do AI Studio |
+   | `GEMINI_MODEL` | opcional — troca o modelo sem mexer no código |
+
+4. **Redeploy** (secret novo só vale no deploy seguinte).
+5. No Firebase, **Authentication > Settings > Domínios autorizados**,
+   adicione o domínio do Pages (`seu-projeto.pages.dev`). Sem isso o login
+   com Google falha em produção.
+
+### Conferir se o proxy subiu
+
+Abra `https://seu-projeto.pages.dev/api/chat` no navegador. Deve responder:
+
+```json
+{ "ok": true, "chaveConfigurada": true, "modelo": "gemini-3.5-flash" }
 ```
 
-**Settings > Pages > Source: Deploy from a branch > main / (root)**.
-Em um ou dois minutos: `https://SEU-USUARIO.github.io/painel/`.
+`chaveConfigurada: false` significa que o secret não está lá, ou que
+faltou o redeploy.
+
+Para testar a chave direto no Gemini, sem passar pelo app:
+
+```bash
+curl -X POST "https://generativelanguage.googleapis.com/v1beta/interactions" \
+  -H "x-goog-api-key: SUA_CHAVE" -H 'Content-Type: application/json' \
+  -d '{"model":"gemini-3.5-flash","input":"responda apenas: ok"}'
+```
+
+Se esse curl falhar, o problema é a chave ou o modelo — não o app.
+
+### Trocar de modelo ou de provedor
+
+O formato do Gemini vive só em `functions/api/chat.js`. O app manda
+`{sistema, historico, mensagem}` e espera `{texto}` de volta. Trocar o
+modelo é mudar o secret `GEMINI_MODEL`; trocar de provedor é mexer só
+nesse arquivo, sem tocar no `index.html`.
 
 ## 5. Instalar no celular
 
@@ -84,16 +127,19 @@ os dados são as **regras do Firestore**, então elas precisam estar publicadas
 antes do primeiro dado entrar. Com as regras de `firestore.rules`, ninguém
 lê seu documento sem estar logado com a sua conta.
 
-A **chave da Groq é diferente**: ela fica visível no código, em repositório
-público. Quem achar pode gastar a sua cota. Não expõe seus dados, mas gera
-custo e é a parte fraca desse desenho. Três saídas, da mais simples à mais
-correta:
+A **chave da IA** era o ponto fraco: ela ficava no `index.html`, visível em
+repositório público, e quem achasse gastaria a cota. Isso acabou — ela
+agora é um secret no Cloudflare e só o proxy a enxerga. Nenhuma chave de
+IA sai mais no navegador.
 
-1. **Aceitar e monitorar** — cota gratuita, chave descartável, você rotaciona
-   se notar uso estranho. É o mesmo tradeoff que você já fez no Conspect.
-2. **Repositório privado** — GitHub Pages em repo privado exige plano pago.
-3. **Proxy** — um Cloudflare Worker de 20 linhas guarda a chave e só aceita
-   requisição do seu domínio. É o jeito certo; se quiser, a gente monta.
+O proxy aceita apenas requisições da própria origem. Isso corta uso por
+outro site, mas não impede alguém que descubra a URL de chamar o endpoint
+direto (uma requisição fora do navegador não manda `Origin`). O risco é
+cota, não dado — se virar problema, o caminho é pôr o Cloudflare Access
+ou um rate limit na frente.
+
+**Se você já publicou a chave antiga da Groq em commit, revogue-a.** Tirar
+do código não tira do histórico do git.
 
 ## Atualizar depois
 
