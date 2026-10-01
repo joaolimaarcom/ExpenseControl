@@ -53,8 +53,23 @@ const json = (dados, status, origem, env) => new Response(JSON.stringify(dados),
 });
 
 /* A resposta é lida de várias formas de propósito: o Gemini já mudou o
-   formato uma vez, e uma mudança dessas não deve derrubar o app. */
+   formato mais de uma vez, e uma mudança dessas não deve derrubar o app.
+   O formato de hoje é o primeiro; os outros são versões anteriores que
+   ainda custam uma linha cada para continuar aceitando. */
 function extrairTexto(d){
+  // Interactions: steps[] com o raciocínio e a saída. Só model_output
+  // interessa — os passos de pensamento não são resposta.
+  if(Array.isArray(d?.steps)){
+    const texto = (tipos) => d.steps
+      .filter(s => !tipos || tipos.includes(s?.type))
+      .flatMap(s => Array.isArray(s?.content) ? s.content : [])
+      .filter(c => c?.type === 'text' || typeof c?.text === 'string')
+      .map(c => c.text || '').join('');
+    const saida = texto(['model_output']);
+    if(saida) return saida;
+    const qualquer = texto(null);
+    if(qualquer) return qualquer;
+  }
   if(typeof d?.output_text === 'string') return d.output_text;
   if(typeof d?.interaction?.output_text === 'string') return d.interaction.output_text;
   const partes = d?.candidates?.[0]?.content?.parts;

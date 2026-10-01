@@ -185,7 +185,7 @@ O service worker guarda o shell em cache. Ao publicar mudança no `index.html`,
 suba a versão em `sw.js`:
 
 ```js
-const VERSAO = 'painel-v8';
+const VERSAO = 'painel-v9';
 ```
 
 Sem isso o celular pode continuar servindo a versão antiga.

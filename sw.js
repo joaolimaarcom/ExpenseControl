@@ -3,7 +3,7 @@
    Chamadas para Firebase e para o proxy da IA nunca são cacheadas.
    Ao publicar uma alteração, suba o VERSAO abaixo. */
 
-const VERSAO = 'painel-v8';
+const VERSAO = 'painel-v9';
 const SHELL = [
   './',
   './index.html',
