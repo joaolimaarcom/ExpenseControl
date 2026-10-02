@@ -1,9 +1,10 @@
 /* Painel — service worker
-   Estratégia: shell em cache com revalidação em segundo plano.
+   A página vem da rede primeiro, com o cache como rede de segurança;
+   ícones e manifesto vêm do cache, com atualização em segundo plano.
    Chamadas para Firebase e para o proxy da IA nunca são cacheadas.
    Ao publicar uma alteração, suba o VERSAO abaixo. */
 
-const VERSAO = 'painel-v11';
+const VERSAO = 'painel-v12';
 const SHELL = [
   './',
   './index.html',
@@ -37,7 +38,27 @@ self.addEventListener('fetch', e => {
   // rede direta para APIs e SDKs
   if (dinamico) return;
 
-  // shell e assets próprios: cache primeiro, atualiza depois
+  /* A página em si vem da rede quando dá. Servi-la do cache fazia o app
+     abrir com o código da versão anterior depois de cada publicação — e
+     código velho calculando saldo mostra número errado, que é pior do que
+     demorar um instante a mais. Sem rede, o cache assume e o app abre
+     igual. */
+  if (req.mode === 'navigate') {
+    e.respondWith(
+      fetch(req)
+        .then(resp => {
+          if (resp && resp.ok) {
+            const copia = resp.clone();
+            caches.open(VERSAO).then(c => c.put(req, copia));
+          }
+          return resp;
+        })
+        .catch(() => caches.match(req).then(hit => hit || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // ícones e manifesto: cache primeiro, atualiza depois
   if (!externo) {
     e.respondWith(
       caches.match(req).then(hit => {

@@ -1413,8 +1413,12 @@ function lerContasDoEditor(){
       const data  = d.querySelector('.cSaldoData').value || null;
       /* só carimba a hora quando o número ou a data mudaram. Carimbar a
          cada salvar em Ajustes empurraria a âncora para frente e os gastos
-         do dia sumiriam da conta sem ninguém ter mexido neles. */
-      if(saldo !== conta.saldo || data !== conta.saldoData) conta.saldoEm = Date.now();
+         do dia sumiriam da conta sem ninguém ter mexido neles. A comparação
+         normaliza tipo: saldo gravado como texto em versão antiga faria
+         "895" !== 895 e a âncora andaria sozinha. */
+      const mudou = Number(saldo) !== Number(conta.saldo || 0)
+                 || (data || null) !== (conta.saldoData || null);
+      if(mudou) conta.saldoEm = Date.now();
       conta.saldo = saldo;
       conta.saldoData = data;
     }
@@ -1722,6 +1726,18 @@ function fallback(msg, erro){
 /* ===================== service worker ===================== */
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=> navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+  /* Instalado na tela inicial, o app pode ficar dias sem navegar — e
+     seguiria com o código antigo em memória mesmo já tendo versão nova
+     baixada. Quando a nova assume, recarrega. Só vale se já havia uma
+     versão no comando: na primeira visita o controlador aparece do nada e
+     um reload aqui seria gratuito. */
+  const jaControlado = !!navigator.serviceWorker.controller;
+  let recarregando = false;
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    if(!jaControlado || recarregando) return;
+    recarregando = true;
+    location.reload();
+  });
 }
 
 iniciar();
