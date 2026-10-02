@@ -537,11 +537,31 @@ const nomeConta      = id => { const c = contaPor(id); return c ? c.nome : (id||
    DEPOIS dela. Sem a data o número não significaria nada: os lançamentos
    antigos já estariam embutidos no saldo informado e seriam contados duas
    vezes. */
+/* Quando o lançamento foi criado, em ms. O id já carrega isso: uid() é
+   Date.now() em base36 com 4 caracteres aleatórios no fim. Lançamentos
+   novos gravam criadoEm direto; o id cobre os antigos. */
+function criadoEm(l){
+  if(Number(l.criadoEm) > 0) return Number(l.criadoEm);
+  const ms = parseInt(String(l.id||'').slice(0,-4), 36);
+  return ms > 1e12 ? ms : 0;
+}
+
+/* O dia em que o saldo foi informado é o caso ambíguo: um gasto desse dia
+   pode já estar embutido no número que veio do banco, ou ter acontecido
+   depois. Quem decide é a hora — por isso saldoEm existe. Em âncora antiga,
+   sem hora gravada, vale a meia-noite: o gasto do dia conta, que é o que a
+   pessoa espera ao informar o saldo e sair usando o app. */
+function entraNoSaldo(l, c){
+  if(!c.saldoData) return true;
+  if(l.data > c.saldoData) return true;
+  if(l.data < c.saldoData) return false;
+  return criadoEm(l) > (Number(c.saldoEm) || Date.parse(c.saldoData + 'T00:00:00'));
+}
+
 function saldoConta(c){
   if(!c || c.tipo !== 'corrente') return 0;
-  const desde = c.saldoData || null;
   return state.lancamentos
-    .filter(l => l.metodo === c.id && (!desde || l.data > desde))
+    .filter(l => l.metodo === c.id && entraNoSaldo(l, c))
     .reduce((s,l)=> s + (l.tipo==='receita' ? l.valor : l.tipo==='despesa' ? -l.valor : 0),
             Number(c.saldo) || 0);
 }
@@ -552,7 +572,7 @@ function saldoContaAte(c, ate){
   if(!c || c.tipo !== 'corrente' || !c.saldoData) return null;
   if(ate < c.saldoData) return null;
   return state.lancamentos
-    .filter(l => l.metodo === c.id && l.data > c.saldoData && l.data <= ate)
+    .filter(l => l.metodo === c.id && entraNoSaldo(l, c) && l.data <= ate)
     .reduce((s,l)=> s + (l.tipo==='receita' ? l.valor : l.tipo==='despesa' ? -l.valor : 0),
             Number(c.saldo) || 0);
 }
@@ -1275,7 +1295,7 @@ document.getElementById('btnSalvar').onclick = ()=>{
     const metodo = document.getElementById('fMet').value || contaPadrao().id;
     state.lancamentos.push({ id:uid(), tipo:tipoModal, valor, descricao, categoria, metodo,
       carteira: normCarteira(document.getElementById('fCarteira').value) || null,
-      data:document.getElementById('fData').value||hojeISO() });
+      data:document.getElementById('fData').value||hojeISO(), criadoEm: Date.now() });
     lembrarDescricao(descricao, categoria, metodo, 1);
     toast(tipoModal==='receita'?'Entrada salva':'Gasto salvo');
   }
@@ -1369,8 +1389,14 @@ function lerContasDoEditor(){
       conta.limite = parseFloat(d.querySelector('.cLimiteConta').value) || 0;
     } else {
       const bruto = d.querySelector('.cSaldo').value;
-      conta.saldo = bruto === '' ? 0 : (parseFloat(String(bruto).replace(',','.')) || 0);
-      conta.saldoData = d.querySelector('.cSaldoData').value || null;
+      const saldo = bruto === '' ? 0 : (parseFloat(String(bruto).replace(',','.')) || 0);
+      const data  = d.querySelector('.cSaldoData').value || null;
+      /* só carimba a hora quando o número ou a data mudaram. Carimbar a
+         cada salvar em Ajustes empurraria a âncora para frente e os gastos
+         do dia sumiriam da conta sem ninguém ter mexido neles. */
+      if(saldo !== conta.saldo || data !== conta.saldoData) conta.saldoEm = Date.now();
+      conta.saldo = saldo;
+      conta.saldoData = data;
     }
     return conta;
   });
@@ -1456,6 +1482,22 @@ function renderChat(){
   log.scrollTop = log.scrollHeight;
 }
 
+/* O número vem daqui, nunca da IA: ela só enxerga o retrato de antes da
+   ação e, se fizer a conta de cabeça, a frase discorda do cartão na tela.
+   Isto lê o que foi realmente gravado, depois de gravado. */
+function situacaoApos(novos){
+  if(!novos.length) return '';
+  const ultimo = novos[novos.length-1];
+  const conta = contaPor(ultimo.metodo);
+  if(!conta) return '';
+  // o mês do lançamento, não o da tela: dá pra lançar olhando outro mês
+  if(ehCredito(conta))
+    return 'Limite livre: ' + brl(limiteTotal() - resumo(String(ultimo.data).slice(0,7)).credito) + '.';
+  if(!saldoAncorado(conta))
+    return 'Informe o saldo de ' + conta.nome + ' em ⚙ para eu acompanhar.';
+  return 'Saldo em ' + conta.nome + ': ' + brl(saldoConta(conta)) + '.';
+}
+
 async function enviar(){
   const txt = entrada.value.trim(); if(!txt) return;
   entrada.value=''; entrada.style.height='auto';
@@ -1471,8 +1513,11 @@ async function enviar(){
   catch(e){ res = fallback(txt, e); }
   finally{ load.remove(); document.getElementById('btnEnviar').disabled = false; }
 
+  const antes = state.lancamentos.length;
   const avisos = aplicar(res);
   let txtResposta = res.resposta || 'Registrado.';
+  const numero = situacaoApos(state.lancamentos.slice(antes));
+  if(numero) txtResposta += ' ' + numero;
   if(avisos.length) txtResposta += ' ' + avisos.join(' ');
   state.chat.push({de:'ia', txt: txtResposta, erro: !!res.erro || avisos.length>0});
   salvar(); render(); renderChat();
@@ -1517,7 +1562,7 @@ function aplicar(res){
          && ids.includes(lembrado.met) && lembrado.met!==idPadrao && lembrado.n>=2) metodo = lembrado.met;
       state.lancamentos.push({ id:uid(), tipo:a.tipo, valor:Number(a.valor),
         descricao:a.descricao||'', data:a.data||hojeISO(),
-        categoria, metodo,
+        categoria, metodo, criadoEm: Date.now(),
         carteira: a.carteira ? normCarteira(a.carteira) : null });
       lembrarDescricao(a.descricao, categoria, metodo, 1);
     } else if(a.tipo==='comprometido' && a.nome && Number(a.valor)>0){
@@ -1607,7 +1652,7 @@ Regras:
 - Uma mensagem pode gerar várias ações. Nada a registrar: "acoes" vazio.
 - Resolva datas relativas em datas absolutas. Hora em 24h; omita se não houver.
 - Pergunta sobre os dados: não crie ações, responda usando SITUACAO com valores em reais.
-- "resposta": uma ou duas frases curtas. Ao registrar gasto, diga quanto resta do teto do fim de semana ou do limite livre. Ao registrar um "comprometido", diga o novo total comprometido pro próximo salário. Ao "corrigir" ou "excluir", confirme o que mudou/sumiu. Sem emoji, sem sermão.
+- "resposta": uma ou duas frases curtas confirmando o que você entendeu ("Anotei R$ 100 de gasolina no Itaú."). NUNCA diga saldo, limite livre, quanto resta ou qualquer total: os números do contexto são de ANTES desta ação, e o app acrescenta o valor atualizado depois da sua frase. Ao "corrigir" ou "excluir", confirme o que mudou/sumiu. Sem emoji, sem sermão.
 
 DADOS: ${JSON.stringify(ctx)}`;
 
