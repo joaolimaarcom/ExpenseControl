@@ -286,7 +286,7 @@
     <div id="hAviso"></div>
     <div class="kpis">
       <div class="kpi"><div class="k" id="kLimiteK">Limite livre</div><div class="v num" id="kLimite">—</div><div class="n" id="kLimiteN"></div></div>
-      <div class="kpi"><div class="k">Dias sem gastar</div><div class="v num" id="kStreak">—</div><div class="n" id="kStreakN"></div></div>
+      <div class="kpi"><div class="k" id="kDoisK">Dias sem gastar</div><div class="v num" id="kDois">—</div><div class="n" id="kDoisN"></div></div>
     </div>
     <h2>Hoje e amanhã</h2>
     <div id="hAgenda"></div>
@@ -1087,9 +1087,29 @@ function renderHoje(){
     : porLimite
       ? 'de '+brl0(limiteTotal())+' · usou '+brl0(r.credito)
       : contasComSaldo().length+(contasComSaldo().length===1?' conta':' contas')+' · atualize em ⚙';
-  const st = streakLimpo();
-  document.getElementById('kStreak').textContent = st;
-  document.getElementById('kStreakN').textContent = st===0 ? 'você gastou hoje' : (st===1 ? 'só hoje até agora' : 'seguidos, contando hoje');
+  /* O segundo cartão mostra o saldo em conta quando o primeiro já está
+     ocupado pelo cartão de crédito — antes o saldo simplesmente sumia da
+     tela ao cadastrar um cartão, que é a hora em que acompanhar os dois
+     mais importa. Sem cartão, o saldo já está no primeiro e aqui volta o
+     "dias sem gastar". */
+  const k2 = document.getElementById('kDoisK'), v2 = document.getElementById('kDois'),
+        n2 = document.getElementById('kDoisN');
+  const ancoradas = contasComSaldo();
+  if(porLimite && contasCorrente().length){
+    const saldo = saldoTotal();
+    k2.textContent = 'Saldo em conta';
+    v2.textContent = ancoradas.length ? brl0(saldo) : '—';
+    v2.className = 'v num' + (ancoradas.length && saldo < 0 ? ' neg' : '');
+    n2.textContent = ancoradas.length
+      ? ancoradas.length + (ancoradas.length === 1 ? ' conta' : ' contas') + ' · atualize em ⚙'
+      : 'informe seu saldo em ⚙';
+  } else {
+    const st = streakLimpo();
+    k2.textContent = 'Dias sem gastar';
+    v2.textContent = st;
+    v2.className = 'v num';
+    n2.textContent = st===0 ? 'você gastou hoje' : (st===1 ? 'só hoje até agora' : 'seguidos, contando hoje');
+  }
 
   const orc = orcamentoRestante(ym), el = document.getElementById('hAviso');
   const oQue = porLimite ? 'o limite livre' : 'o saldo em conta';
