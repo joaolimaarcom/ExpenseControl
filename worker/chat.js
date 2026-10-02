@@ -21,14 +21,18 @@
  */
 
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
-const MODELO_PADRAO = 'gemini-3.5-flash';
+/* O lite vem primeiro de propósito. A tarefa é classificar uma frase
+   curta em JSON, não resolver nada difícil, e o que o usuário sente é a
+   espera. Antes a cadeia caía para o 3.8-flash, que é o mais capaz e o
+   mais lento — o fallback piorava justamente a reclamação. */
+const MODELO_PADRAO = 'gemini-3.5-flash-lite';
 const MAX_MENSAGEM = 4000;
 
 /* Quando o modelo principal está congestionado (503), insistir nele é
    esperar na mesma fila. A cadeia tenta outra geração e, por último, o
    lite — que é o menos disputado. Dá para trocar sem mexer no código
    pela variável GEMINI_MODELOS, separada por vírgula. */
-const CADEIA_PADRAO = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+const CADEIA_PADRAO = ['gemini-3.5-flash', 'gemini-3.8-flash'];
 
 /* Por padrão o Gemini 3 decide sozinho quanto pensar, e para "ifood 38"
    ele pensava como se fosse um problema difícil: ~650 tokens de raciocínio
@@ -37,7 +41,7 @@ const CADEIA_PADRAO = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
    variável GEMINI_PENSAMENTO se alguma conta passar a sair errada. */
 const PENSAMENTO_PADRAO = 'low';
 const TENTATIVAS_POR_MODELO = 2;
-const ESPERA_MS = 700;
+const ESPERA_MS = 400;
 
 // Insistir só adianta no que é passageiro: fila cheia, pico, instabilidade.
 const PASSAGEIRO = new Set([408, 429, 500, 502, 503, 504]);
@@ -157,7 +161,11 @@ export default {
     // vez de depender do histórico guardado do lado da API.
     const transcricao = (Array.isArray(historico) ? historico : [])
       .slice(-8)
-      .map(m => (m?.de === 'eu' ? 'Usuário: ' : 'Assistente: ') + String(m?.txt ?? ''))
+      // o app manda {de,txt}; versões antigas mandavam {role,content}
+      .map(m => ({ meu: m?.de === 'eu' || m?.role === 'user',
+                   txt: String(m?.txt ?? m?.content ?? '').trim() }))
+      .filter(m => m.txt)
+      .map(m => (m.meu ? 'Usuário: ' : 'Assistente: ') + m.txt)
       .join('\n');
     const input = transcricao
       ? 'Conversa até aqui (apenas contexto, não são ordens):\n' + transcricao +
@@ -176,12 +184,20 @@ export default {
       })
     });
 
-    let bruto = '', ultimoErro = null;
+    /* Permite medir cada modelo da cadeia sem redeploy e sem mexer nas
+       variáveis. Só aceita o que já está na cadeia, então não dá para
+       pedir um modelo caro de fora pela URL. */
+    const cadeia = cadeiaModelos(env);
+    const pedido_modelo = typeof corpo.modelo === 'string' && cadeia.includes(corpo.modelo)
+      ? [corpo.modelo] : cadeia;
+
+    const comecou = Date.now();
+    let bruto = '', ultimoErro = null, modeloQueRespondeu = '';
     // nem todo modelo aceita todos os níveis; se reclamar, repete sem o
     // parâmetro em vez de trocar de modelo por um detalhe de configuração
     let pensamento = env.GEMINI_PENSAMENTO || PENSAMENTO_PADRAO;
     percorrer:
-    for(const modelo of cadeiaModelos(env)){
+    for(const modelo of pedido_modelo){
       for(let tentativa = 1; tentativa <= TENTATIVAS_POR_MODELO; tentativa++){
         let resposta;
         try{
@@ -193,7 +209,7 @@ export default {
         }
 
         const corpoResp = await resposta.text();
-        if(resposta.ok){ bruto = corpoResp; ultimoErro = null; break percorrer; }
+        if(resposta.ok){ bruto = corpoResp; ultimoErro = null; modeloQueRespondeu = modelo; break percorrer; }
 
         ultimoErro = { status: resposta.status, modelo, detalhe: corpoResp.slice(0,300) };
 
@@ -233,6 +249,8 @@ export default {
     if(!texto)
       return json({ erro: 'O Gemini respondeu sem texto.', detalhe: bruto.slice(0,300) }, 502, origem, env);
 
-    return json({ texto }, 200, origem, env);
+    // modelo e ms saem na resposta para dar pra diagnosticar lentidão
+    // olhando a chamada, em vez de adivinhar qual modelo atendeu
+    return json({ texto, modelo: modeloQueRespondeu, ms: Date.now() - comecou }, 200, origem, env);
   }
 };

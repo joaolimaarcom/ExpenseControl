@@ -1680,7 +1680,8 @@ Regras:
 
 DADOS: ${JSON.stringify(ctx)}`;
 
-  const historico = state.chat.slice(-9, -1).map(m => ({ role: m.de==='eu' ? 'user' : 'assistant', content: m.txt }));
+  // o proxy lê {de,txt}: mandar {role,content} fazia o histórico chegar vazio
+  const historico = state.chat.slice(-9, -1).map(m => ({ de: m.de, txt: m.txt }));
 
   const resp = await fetch(alvo, {
     method:'POST',
