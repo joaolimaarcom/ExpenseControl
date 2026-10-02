@@ -29,6 +29,13 @@ const MAX_MENSAGEM = 4000;
    lite — que é o menos disputado. Dá para trocar sem mexer no código
    pela variável GEMINI_MODELOS, separada por vírgula. */
 const CADEIA_PADRAO = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+
+/* Por padrão o Gemini 3 decide sozinho quanto pensar, e para "ifood 38"
+   ele pensava como se fosse um problema difícil: ~650 tokens de raciocínio
+   para 114 de resposta, 11s de espera. A tarefa aqui é classificar uma
+   frase curta em JSON — não precisa de deliberação. Dá para subir pela
+   variável GEMINI_PENSAMENTO se alguma conta passar a sair errada. */
+const PENSAMENTO_PADRAO = 'low';
 const TENTATIVAS_POR_MODELO = 2;
 const ESPERA_MS = 700;
 
@@ -157,24 +164,28 @@ export default {
         '\n\nNova mensagem do usuário:\n' + mensagem
       : mensagem;
 
-    const pedido = modelo => ({
+    const pedido = (modelo, pensar) => ({
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
       body: JSON.stringify({
         model: modelo,
         system_instruction: typeof sistema === 'string' ? sistema : undefined,
         input,
-        response_format: { type: 'text', mime_type: 'application/json' }
+        response_format: { type: 'text', mime_type: 'application/json' },
+        generation_config: pensar ? { thinking_level: pensar } : undefined
       })
     });
 
     let bruto = '', ultimoErro = null;
+    // nem todo modelo aceita todos os níveis; se reclamar, repete sem o
+    // parâmetro em vez de trocar de modelo por um detalhe de configuração
+    let pensamento = env.GEMINI_PENSAMENTO || PENSAMENTO_PADRAO;
     percorrer:
     for(const modelo of cadeiaModelos(env)){
       for(let tentativa = 1; tentativa <= TENTATIVAS_POR_MODELO; tentativa++){
         let resposta;
         try{
-          resposta = await fetch(ENDPOINT, pedido(modelo));
+          resposta = await fetch(ENDPOINT, pedido(modelo, pensamento));
         }catch(e){
           ultimoErro = { status: 0, modelo, detalhe: String(e).slice(0,200) };
           await dormir(ESPERA_MS * tentativa);
@@ -185,6 +196,12 @@ export default {
         if(resposta.ok){ bruto = corpoResp; ultimoErro = null; break percorrer; }
 
         ultimoErro = { status: resposta.status, modelo, detalhe: corpoResp.slice(0,300) };
+
+        if(resposta.status === 400 && /thinking|generation_config/i.test(corpoResp) && pensamento){
+          pensamento = null;
+          tentativa--;         // não gasta tentativa: só pode acontecer uma vez
+          continue;            // mesmo modelo, sem o parâmetro recusado
+        }
 
         // chave, cota da conta ou corpo malformado: errado para todo
         // modelo, então parar aqui é o que evita três vezes o mesmo erro

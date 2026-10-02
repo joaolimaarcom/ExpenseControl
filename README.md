@@ -64,6 +64,7 @@ requisições por dia).
    | Variável | `ORIGEM_PERMITIDA` | `https://SEU-USUARIO.github.io` |
    | Variável | `GEMINI_MODEL` | opcional — troca o modelo principal |
    | Variável | `GEMINI_MODELOS` | opcional — a cadeia inteira, separada por vírgula |
+   | Variável | `GEMINI_PENSAMENTO` | opcional — `low` (padrão), `medium` ou `high` |
 
 4. Anote a URL que aparece: `https://painel-ia.SEU-SUBDOMINIO.workers.dev`.
 
@@ -107,6 +108,18 @@ O formato do Gemini vive só em `worker/chat.js`. O app manda
 `{sistema, historico, mensagem}` e espera `{texto}` de volta. Trocar o
 modelo é mudar a variável `GEMINI_MODEL`; trocar de provedor é mexer só
 nesse arquivo, sem tocar no `index.html`.
+
+### Por que o chat responde rápido
+
+O Gemini 3 decide sozinho quanto pensar antes de responder, e para uma
+frase como "ifood 38" ele deliberava como se fosse um problema difícil:
+~650 tokens de raciocínio para 114 de resposta, 11 segundos de espera.
+
+A tarefa aqui é classificar uma frase curta em JSON, não resolver nada —
+por isso o Worker manda `thinking_level: low`. Se algum caso passar a sair
+errado, `GEMINI_PENSAMENTO = medium` devolve a deliberação sem mexer no
+código. Se o modelo não aceitar o parâmetro, o Worker repete sem ele em
+vez de falhar.
 
 ### Quando o modelo está congestionado
 
