@@ -4,7 +4,7 @@
    Chamadas para o Firebase nunca são cacheadas.
    Ao publicar uma alteração, suba o VERSAO abaixo. */
 
-const VERSAO = 'contas-v2';
+const VERSAO = 'contas-v3';
 const SHELL = [
   './',
   './index.html',

@@ -57,9 +57,15 @@ chegam no mesmo lugar.
 O app guarda tudo em **`contas/{uid}`**, um documento por usuário:
 
 ```
+cfg      { salario }
 cartoes  [{ id, nome }]
 gastos   [{ id, desc, valor, cartaoId, parcelas, mesInicial, criadoEm }]
 ```
+
+Com o salário preenchido em **⚙**, o bloco do total mostra quanto sobra
+naquele mês e uma barra do quanto já está comprometido. Sem salário a
+linha some: "sobram R$ 0" para quem nunca preencheu seria um número
+inventado.
 
 ## 2. Publicar no GitHub Pages
 
@@ -99,7 +105,7 @@ assim uma publicação nova vale já no primeiro acesso, em vez de só no
 segundo. Mesmo assim, suba a versão em `sw.js` ao publicar:
 
 ```js
-const VERSAO = 'contas-v2';
+const VERSAO = 'contas-v3';
 ```
 
 Backup manual em **⚙ > Baixar backup** — JSON completo, restaurável na

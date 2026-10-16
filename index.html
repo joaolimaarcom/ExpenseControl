@@ -86,6 +86,14 @@
   }
   .totalbox .valor{font-size:38px; line-height:1.05; margin-top:4px; font-weight:800; letter-spacing:-.03em}
   .totalbox .det{font-size:12.5px; color:var(--tot-mut); margin-top:6px; font-weight:500}
+  .totalbox .resto{margin-top:15px}
+  .totalbox .resto[hidden]{display:none}
+  .totalbox .barra{height:7px; border-radius:99px; background:rgba(255,255,255,.22); overflow:hidden}
+  .totalbox .barra i{display:block; height:100%; border-radius:99px; background:var(--tot-ink);
+                     transition:width .35s ease}
+  .totalbox .resto.estourou .barra i{background:#FFC9C2}
+  .totalbox .restoTxt{font-size:12.5px; font-weight:600; margin-top:8px; color:var(--tot-ink)}
+  .totalbox .resto.estourou .restoTxt{color:#FFC9C2}
 
   /* ---------- tira de meses ---------- */
   .tira{display:flex; gap:8px; overflow-x:auto; margin:14px -16px 0; padding:4px 16px 6px; scrollbar-width:none}
@@ -242,6 +250,10 @@
     <div class="rot">Total a pagar</div>
     <div class="valor num" id="total">R$ 0,00</div>
     <div class="det" id="totalDet">nada anotado neste mês</div>
+    <div class="resto" id="resto" hidden>
+      <div class="barra"><i id="barraUso"></i></div>
+      <div class="restoTxt" id="restoTxt"></div>
+    </div>
   </div>
 
   <div class="tira" id="tira"></div>
@@ -305,7 +317,11 @@
     <h3>Ajustes</h3>
     <p class="dica" id="cConta">—</p>
 
-    <label>Cartões e formas de pagamento</label>
+    <label for="cSalario">Salário mensal</label>
+    <input id="cSalario" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00">
+    <p class="dica" style="margin:7px 0 0">Deixe vazio se não quiser acompanhar quanto sobra.</p>
+
+    <label style="margin-top:22px">Cartões e formas de pagamento</label>
     <div id="cCartoes"></div>
     <button class="btn" id="cAddCartao" style="margin-top:8px">+ adicionar cartão</button>
 
@@ -347,7 +363,7 @@ const CONFIG = {
 };
 
 /* ===================== estado ===================== */
-const state = { cartoes: [], gastos: [] };
+const state = { cfg: { salario: 0 }, cartoes: [], gastos: [] };
 let user = null, auth = null, db = null, docRef = null, modo = 'indefinido';
 let ignorarSnapshot = false, editando = null;
 
@@ -431,6 +447,21 @@ function render(){
   const itens = gastosDoMes(mesRef);
   const total = itens.reduce((s,x) => s + x.valor, 0);
   document.getElementById('total').textContent = brl(total);
+
+  /* Sem salário informado a linha não aparece: mostrar "sobram R$ 0"
+     para quem nunca preencheu seria inventar um número. */
+  const salario = Number(state.cfg.salario) || 0;
+  const resto = document.getElementById('resto');
+  resto.hidden = !salario;
+  if(salario){
+    const sobra = salario - total;
+    const usado = Math.min(100, Math.round(total / salario * 100));
+    resto.classList.toggle('estourou', sobra < 0);
+    document.getElementById('barraUso').style.width = usado + '%';
+    document.getElementById('restoTxt').textContent = sobra >= 0
+      ? 'Sobram ' + brl(sobra) + ' do salário de ' + brl(salario) + ' · ' + usado + '% comprometido'
+      : 'Passou ' + brl(-sobra) + ' do salário de ' + brl(salario);
+  }
 
   const grupos = porCartao(mesRef);
   document.getElementById('totalDet').textContent = itens.length
@@ -579,6 +610,7 @@ function novoCartao(){
 function abrirCfg(){
   document.getElementById('cConta').textContent = user?.email
     ? 'Sincronizando como ' + user.email : 'Sincronizando na nuvem';
+  document.getElementById('cSalario').value = state.cfg.salario || '';
   const caixa = document.getElementById('cCartoes');
   caixa.innerHTML = '';
   state.cartoes.forEach(c => caixa.appendChild(linhaCartao(c)));
@@ -602,7 +634,7 @@ function linhaCartao(c){
 }
 
 function baixarBackup(){
-  const dados = JSON.stringify({ cartoes: state.cartoes, gastos: state.gastos, em: new Date().toISOString() }, null, 2);
+  const dados = JSON.stringify({ cfg: state.cfg, cartoes: state.cartoes, gastos: state.gastos, em: new Date().toISOString() }, null, 2);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([dados], { type:'application/json' }));
   a.download = 'contas-a-pagar-' + ymAtual() + '.json';
@@ -615,6 +647,7 @@ function restaurarBackup(arquivo){
     try{
       const d = JSON.parse(leitor.result);
       if(!Array.isArray(d.gastos) || !Array.isArray(d.cartoes)) throw new Error('formato');
+      state.cfg = { salario: Number(d.cfg?.salario) || 0 };
       state.cartoes = d.cartoes; state.gastos = d.gastos;
       salvar(); render(); abrirCfg(); toast('Backup restaurado');
     }catch(e){ toast('Arquivo inválido'); }
@@ -635,13 +668,14 @@ async function salvarAgora(){
   if(modo !== 'nuvem' || !docRef) return;
   ignorarSnapshot = true;
   try{
-    await window._fb.setDoc(docRef, { cartoes: state.cartoes, gastos: state.gastos, atualizadoEm: Date.now() });
+    await window._fb.setDoc(docRef, { cfg: state.cfg, cartoes: state.cartoes, gastos: state.gastos, atualizadoEm: Date.now() });
     setSinc('on','sincronizado');
   }catch(e){ setSinc('erro','offline — salva quando voltar'); }
   finally{ setTimeout(()=>{ ignorarSnapshot = false; }, 300); }
 }
 
 function aplicarDoc(d){
+  state.cfg     = { salario: Number(d.cfg?.salario) || 0 };
   state.cartoes = Array.isArray(d.cartoes) ? d.cartoes : [];
   state.gastos  = Array.isArray(d.gastos)  ? d.gastos  : [];
 }
@@ -754,6 +788,10 @@ document.getElementById('modalCfg').onclick = e => { if(e.target.id === 'modalCf
 document.getElementById('cAddCartao').onclick = ()=>{
   const c = novoCartao();
   if(c) document.getElementById('cCartoes').appendChild(linhaCartao(c));
+};
+document.getElementById('cSalario').oninput = e => {
+  state.cfg.salario = parseFloat(String(e.target.value).replace(',','.')) || 0;
+  salvar(); render();
 };
 document.getElementById('cBaixar').onclick = baixarBackup;
 document.getElementById('cRestaurar').onclick = ()=> document.getElementById('cArquivo').click();
