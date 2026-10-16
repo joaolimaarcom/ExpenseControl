@@ -3,7 +3,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Cada usuário só acessa o próprio documento.
+    // O app novo guarda tudo em contas/{uid}.
+    match /contas/{uid} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == uid;
+    }
+
+    // Coleção do app antigo. Fica liberada só para você conseguir
+    // consultar ou baixar o que ficou lá; o app novo não escreve nela.
+    // Pode apagar este bloco quando não precisar mais dos dados velhos.
     match /painel/{uid} {
       allow read, write: if request.auth != null
                          && request.auth.uid == uid;
@@ -18,10 +26,10 @@ service cloud.firestore {
 
 // TRAVA EXTRA (recomendada, já que é um app de uma pessoa só):
 // depois de logar a primeira vez, copie seu UID no console do Firebase
-// (Authentication > Users) e troque a regra acima por esta, que permite
+// (Authentication > Users) e acrescente a comparação abaixo, que permite
 // apenas você — mesmo que alguém descubra a URL e o apiKey:
 //
-//     match /painel/{uid} {
+//     match /contas/{uid} {
 //       allow read, write: if request.auth != null
 //                          && request.auth.uid == uid
 //                          && uid == 'COLE_SEU_UID_AQUI';

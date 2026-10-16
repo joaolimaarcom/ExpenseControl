@@ -1,10 +1,10 @@
 /* Painel — service worker
    A página vem da rede primeiro, com o cache como rede de segurança;
    ícones e manifesto vêm do cache, com atualização em segundo plano.
-   Chamadas para Firebase e para o proxy da IA nunca são cacheadas.
+   Chamadas para o Firebase nunca são cacheadas.
    Ao publicar uma alteração, suba o VERSAO abaixo. */
 
-const VERSAO = 'painel-v13';
+const VERSAO = 'contas-v1';
 const SHELL = [
   './',
   './index.html',
@@ -33,7 +33,7 @@ self.addEventListener('fetch', e => {
 
   const url = new URL(req.url);
   const externo = url.origin !== self.location.origin;
-  const dinamico = /googleapis|gstatic|firebase|workers\.dev/.test(url.hostname);
+  const dinamico = /googleapis|gstatic|firebase/.test(url.hostname);
 
   // rede direta para APIs e SDKs
   if (dinamico) return;
