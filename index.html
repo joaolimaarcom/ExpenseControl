@@ -3,39 +3,45 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1E1F22">
+<meta name="theme-color" content="#14111C">
 <title>Contas a pagar</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="apple-touch-icon" href="./icone-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+  /* Neobanco: um bloco roxo carrega o total, cartões brancos bem
+     arredondados carregam o resto. Uma cor forte só, no número que
+     importa; tudo em volta fica quieto. */
   :root{
-    --bg:#F7F4EE; --card:#FFFFFF; --card-2:#FBF8F2;
-    --ink:#2A2621; --ink-soft:#4A4339; --muted:#9C9284;
-    --line:#EAE3D5; --line-2:#F0EBDF;
-    --accent:#D9A84E; --accent-ink:#2A2621; --accent-soft:#F6E9D2;
-    --out:#C2443A; --ok:#5C8A63;
-    --serif:'Instrument Serif', ui-serif, Georgia, serif;
-    --sans:'Public Sans', system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --pad:16px; --r-lg:20px; --r-md:14px; --r-sm:10px;
-    --shadow:0 1px 2px rgba(40,32,20,.04), 0 10px 24px -12px rgba(40,32,20,.10);
+    --bg:#F4F2FA; --card:#FFFFFF; --card-2:#FAF9FE;
+    --ink:#211B33; --ink-soft:#4A4166; --muted:#7C7391;
+    --line:#E7E3F3; --line-2:#F0EDF9;
+    --accent:#6B2FD6; --accent-ink:#FFFFFF; --accent-soft:#EDE5FD;
+    --tot-bg:#6B2FD6; --tot-ink:#FFFFFF; --tot-mut:#D6C4FA;
+    --out:#D23B52; --ok:#25A06B;
+    --sans:'Plus Jakarta Sans', system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --pad:16px; --r-lg:20px; --r-md:14px; --r-sm:12px;
+    --sombra:0 1px 2px rgba(33,27,51,.05), 0 10px 26px -16px rgba(33,27,51,.22);
+    --sombra-roxa:0 10px 26px -10px rgba(107,47,214,.45);
   }
   html[data-tema="escuro"]{
-    --bg:#17181B; --card:#1F2024; --card-2:#26272C;
-    --ink:#F2EFE9; --ink-soft:#CFCAC2; --muted:#908B84;
-    --line:#32343A; --line-2:#2A2C31;
-    --accent:#E0B45C; --accent-ink:#1A1B1E; --accent-soft:#3A3322;
-    --out:#E2695E; --ok:#7FB187;
-    --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 28px -14px rgba(0,0,0,.6);
+    --bg:#14111C; --card:#1D1930; --card-2:#252040;
+    --ink:#F3F0FA; --ink-soft:#CFC8E4; --muted:#8B82A8;
+    --line:#2C2644; --line-2:#241F39;
+    --accent:#7C3FEE; --accent-ink:#FFFFFF; --accent-soft:#2A2148;
+    --tot-bg:#7C3FEE; --tot-ink:#FFFFFF; --tot-mut:#DDCCFF;
+    --out:#F0697E; --ok:#4FC894;
+    --sombra:0 1px 2px rgba(0,0,0,.35), 0 12px 28px -16px rgba(0,0,0,.7);
+    --sombra-roxa:0 12px 28px -12px rgba(124,63,238,.55);
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
   body{
     background:var(--bg); color:var(--ink); font-family:var(--sans);
     font-size:16px; line-height:1.45; -webkit-font-smoothing:antialiased;
-    padding:0 var(--pad) calc(96px + env(safe-area-inset-bottom));
+    padding:0 var(--pad) calc(104px + env(safe-area-inset-bottom));
     max-width:640px; margin:0 auto;
   }
   .num{font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1}
@@ -43,134 +49,145 @@
   /* ---------- topo ---------- */
   header{
     position:sticky; top:0; z-index:20; background:var(--bg);
-    padding:calc(12px + env(safe-area-inset-top)) 0 10px;
+    padding:calc(14px + env(safe-area-inset-top)) 0 10px;
   }
   .topo{display:flex; align-items:center; gap:10px}
-  .marca{font-family:var(--serif); font-size:26px; line-height:1; flex:1}
+  .marca{font-size:20px; font-weight:800; letter-spacing:-.02em; flex:1}
   .icone{
-    width:38px; height:38px; flex:none; border-radius:11px; cursor:pointer;
-    border:1px solid var(--line); background:var(--card); color:var(--ink-soft);
-    font-size:15px; display:grid; place-items:center;
+    width:40px; height:40px; flex:none; border-radius:14px; cursor:pointer;
+    border:0; background:var(--card); color:var(--ink-soft);
+    font-size:15px; display:grid; place-items:center; box-shadow:var(--sombra);
+    transition:transform .12s ease;
   }
-  .icone:active{transform:scale(.95)}
-  .sinc{font-size:11px; color:var(--muted); margin-top:6px; display:flex; align-items:center; gap:6px}
+  .icone:active{transform:scale(.93)}
+  .sinc{font-size:11px; color:var(--muted); margin-top:8px; display:flex; align-items:center; gap:6px; font-weight:500}
   .sinc i{width:7px; height:7px; border-radius:50%; background:var(--muted); display:block}
   .sinc.on i{background:var(--ok)} .sinc.erro i{background:var(--out)}
 
-  .navmes{display:flex; align-items:center; gap:8px; margin-top:12px}
+  .navmes{display:flex; align-items:center; gap:8px; margin-top:14px}
   .navmes button{
-    width:34px; height:34px; flex:none; border-radius:10px; cursor:pointer;
-    border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:16px;
+    width:38px; height:38px; flex:none; border-radius:13px; cursor:pointer;
+    border:0; background:var(--card); color:var(--ink); font-size:17px;
+    box-shadow:var(--sombra); transition:transform .12s ease;
   }
+  .navmes button:active{transform:scale(.93)}
   .navmes .rotulo{flex:1; text-align:center}
-  .navmes .rotulo b{display:block; font-size:17px; font-weight:600}
-  .navmes .rotulo small{display:block; font-size:11px; color:var(--muted)}
+  .navmes .rotulo b{display:block; font-size:16px; font-weight:700; letter-spacing:-.01em}
+  .navmes .rotulo small{display:block; font-size:11px; color:var(--muted); font-weight:500}
 
   /* ---------- total ---------- */
   .totalbox{
-    background:var(--card); border:1px solid var(--line); border-radius:var(--r-lg);
-    padding:18px var(--pad); margin-top:14px; box-shadow:var(--shadow);
+    background:var(--tot-bg); color:var(--tot-ink); border-radius:22px;
+    padding:20px var(--pad); margin-top:14px; box-shadow:var(--sombra-roxa);
   }
-  .totalbox .rot{font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted)}
-  .totalbox .valor{font-family:var(--serif); font-size:44px; line-height:1.05; margin-top:4px}
-  .totalbox .det{font-size:13px; color:var(--muted); margin-top:6px}
+  .totalbox .rot{
+    font-size:10.5px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--tot-mut); font-weight:700;
+  }
+  .totalbox .valor{font-size:38px; line-height:1.05; margin-top:4px; font-weight:800; letter-spacing:-.03em}
+  .totalbox .det{font-size:12.5px; color:var(--tot-mut); margin-top:6px; font-weight:500}
 
   /* ---------- tira de meses ---------- */
-  .tira{display:flex; gap:8px; overflow-x:auto; margin:14px -16px 0; padding:2px 16px 4px; scrollbar-width:none}
+  .tira{display:flex; gap:8px; overflow-x:auto; margin:14px -16px 0; padding:4px 16px 6px; scrollbar-width:none}
   .tira::-webkit-scrollbar{display:none}
   .tira button{
-    flex:none; min-width:76px; cursor:pointer; text-align:left;
-    border:1px solid var(--line); background:var(--card); color:var(--ink);
-    border-radius:var(--r-md); padding:9px 11px;
+    flex:none; min-width:84px; cursor:pointer; text-align:left;
+    border:2px solid transparent; background:var(--card); color:var(--ink);
+    border-radius:15px; padding:9px 12px; box-shadow:var(--sombra);
+    font-family:inherit; transition:transform .12s ease;
   }
-  .tira button small{display:block; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em}
-  .tira button span{display:block; font-size:14px; font-weight:600; margin-top:2px}
+  .tira button:active{transform:scale(.96)}
+  .tira button small{display:block; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; font-weight:700}
+  .tira button span{display:block; font-size:14px; font-weight:700; margin-top:2px; letter-spacing:-.01em}
   .tira button[aria-current="true"]{border-color:var(--accent); background:var(--accent-soft)}
 
   /* ---------- cartões ---------- */
-  h2{font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted);
-     font-weight:600; margin:26px 0 10px}
+  h2{font-size:11px; letter-spacing:.11em; text-transform:uppercase; color:var(--muted);
+     font-weight:700; margin:26px 0 10px}
   .bloco{
-    background:var(--card); border:1px solid var(--line); border-radius:var(--r-lg);
-    margin-bottom:12px; overflow:hidden;
+    background:var(--card); border-radius:var(--r-lg); margin-bottom:12px;
+    overflow:hidden; box-shadow:var(--sombra);
   }
   .bloco > .cab{
-    display:flex; align-items:baseline; gap:10px; padding:13px var(--pad);
-    border-bottom:1px solid var(--line-2);
+    display:flex; align-items:baseline; gap:10px; padding:15px var(--pad) 13px;
   }
-  .bloco > .cab .nome{font-weight:600; flex:1}
-  .bloco > .cab .sub{font-size:16px; font-weight:600}
+  .bloco > .cab .nome{font-weight:700; flex:1; letter-spacing:-.01em}
+  .bloco > .cab .sub{font-size:17px; font-weight:800; letter-spacing:-.02em}
   .item{
     display:flex; align-items:baseline; gap:10px; width:100%; text-align:left; cursor:pointer;
-    padding:11px var(--pad); background:none; border:0; border-top:1px solid var(--line-2);
+    padding:12px var(--pad); background:none; border:0; border-top:1px solid var(--line-2);
     color:var(--ink); font:inherit;
   }
-  .item:first-of-type{border-top:0}
   .item:active{background:var(--card-2)}
   .item .desc{flex:1; min-width:0}
-  .item .desc b{display:block; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .item .desc small{color:var(--muted); font-size:12px}
-  .item .v{font-weight:600; white-space:nowrap}
+  .item .desc b{display:block; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .item .desc small{color:var(--muted); font-size:12px; font-weight:500}
+  .item .v{font-weight:700; white-space:nowrap; letter-spacing:-.01em}
+  /* cartão com um gasto só: a linha única faz o papel do cabeçalho */
+  .item.solo{padding:15px var(--pad); border-top:0}
+  .item.solo .desc b{font-weight:700}
+  .item.solo .v{font-size:17px; font-weight:800; letter-spacing:-.02em}
 
   .vazio{
-    border:1px dashed var(--line); border-radius:var(--r-lg); padding:30px 20px;
-    text-align:center; color:var(--muted); font-size:14px;
+    background:var(--card); border-radius:var(--r-lg); padding:34px 22px;
+    text-align:center; color:var(--muted); font-size:14px; box-shadow:var(--sombra);
   }
-  .vazio b{display:block; color:var(--ink); font-size:16px; font-weight:600; margin-bottom:6px}
+  .vazio b{display:block; color:var(--ink); font-size:17px; font-weight:700; margin-bottom:6px}
 
   /* ---------- botão + ---------- */
   .mais{
     position:fixed; right:max(16px, calc(50% - 320px + 16px));
-    bottom:calc(20px + env(safe-area-inset-bottom)); z-index:30;
-    width:58px; height:58px; border-radius:19px; border:0; cursor:pointer;
-    background:var(--accent); color:var(--accent-ink); font-size:28px; line-height:1;
-    box-shadow:0 10px 26px -8px rgba(0,0,0,.45);
+    bottom:calc(22px + env(safe-area-inset-bottom)); z-index:30;
+    width:62px; height:62px; border-radius:22px; border:0; cursor:pointer;
+    background:var(--accent); color:var(--accent-ink); font-size:30px; line-height:1;
+    box-shadow:var(--sombra-roxa); transition:transform .12s ease;
   }
-  .mais:active{transform:scale(.94)}
+  .mais:active{transform:scale(.92)}
 
   /* ---------- modais ---------- */
   .modal{
-    position:fixed; inset:0; z-index:50; background:rgba(10,10,12,.55);
-    display:flex; align-items:flex-end; justify-content:center; padding:0;
+    position:fixed; inset:0; z-index:50; background:rgba(16,10,32,.55);
+    display:flex; align-items:flex-end; justify-content:center;
   }
   .modal[hidden]{display:none}
   .folha{
     background:var(--bg); width:100%; max-width:640px; max-height:92vh; overflow-y:auto;
-    border-radius:22px 22px 0 0; padding:18px var(--pad) calc(22px + env(safe-area-inset-bottom));
+    border-radius:26px 26px 0 0; padding:20px var(--pad) calc(22px + env(safe-area-inset-bottom));
   }
-  .folha h3{font-family:var(--serif); font-size:24px; margin:0 0 2px}
-  .folha .dica{font-size:13px; color:var(--muted); margin:0 0 16px}
-  label{display:block; font-size:12px; color:var(--muted); margin:14px 0 5px}
+  .folha h3{font-size:23px; margin:0 0 2px; font-weight:800; letter-spacing:-.02em}
+  .folha .dica{font-size:13px; color:var(--muted); margin:0 0 16px; font-weight:500}
+  label{display:block; font-size:12px; color:var(--muted); margin:14px 0 6px; font-weight:600}
   input, select{
-    width:100%; font:inherit; color:var(--ink); background:var(--card);
-    border:1px solid var(--line); border-radius:var(--r-sm); padding:11px 12px;
+    width:100%; font:inherit; font-weight:500; color:var(--ink); background:var(--card);
+    border:1.5px solid var(--line); border-radius:var(--r-sm); padding:12px 13px;
   }
-  input:focus, select:focus{outline:2px solid var(--accent); outline-offset:-1px}
+  input:focus, select:focus{outline:0; border-color:var(--accent)}
   .dupla{display:flex; gap:10px} .dupla > *{flex:1; min-width:0}
-  .seg{display:flex; gap:0; border:1px solid var(--line); border-radius:var(--r-sm); overflow:hidden}
+  .seg{display:flex; border:1.5px solid var(--line); border-radius:var(--r-sm); overflow:hidden}
   .seg button{
     flex:1; cursor:pointer; border:0; background:var(--card); color:var(--muted);
-    font:inherit; font-size:13px; padding:10px 6px;
+    font:inherit; font-size:13px; font-weight:600; padding:11px 6px;
   }
-  .seg button[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink); font-weight:600}
+  .seg button[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink)}
   .previa{
-    margin-top:14px; padding:11px 12px; border-radius:var(--r-sm);
-    background:var(--accent-soft); color:var(--ink); font-size:13px; min-height:42px;
+    margin-top:14px; padding:13px 14px; border-radius:var(--r-md);
+    background:var(--accent-soft); color:var(--ink); font-size:13px; font-weight:500; min-height:44px;
   }
   .acoes{display:flex; gap:10px; margin-top:20px}
   .btn{
-    flex:1; cursor:pointer; font:inherit; font-weight:600; padding:13px; border-radius:var(--r-sm);
-    border:1px solid var(--line); background:var(--card); color:var(--ink);
+    flex:1; cursor:pointer; font:inherit; font-weight:700; padding:14px; border-radius:var(--r-md);
+    border:0; background:var(--card); color:var(--ink); box-shadow:var(--sombra);
+    transition:transform .12s ease;
   }
-  .btn.forte{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
+  .btn.forte{background:var(--accent); color:var(--accent-ink); box-shadow:var(--sombra-roxa)}
   .btn.perigo{color:var(--out)}
   .btn:active{transform:scale(.98)}
 
   .cartaoEd{display:flex; gap:8px; align-items:center; margin-bottom:8px}
   .cartaoEd input{flex:1}
   .cartaoEd button{
-    flex:none; width:40px; height:40px; border-radius:var(--r-sm); cursor:pointer;
-    border:1px solid var(--line); background:var(--card); color:var(--out); font-size:16px;
+    flex:none; width:44px; height:44px; border-radius:var(--r-sm); cursor:pointer;
+    border:0; background:var(--card); color:var(--out); font-size:16px; box-shadow:var(--sombra);
   }
 
   /* ---------- porta ---------- */
@@ -180,18 +197,20 @@
     padding:30px var(--pad); text-align:center;
   }
   .porta[hidden]{display:none}
-  .porta h1{font-family:var(--serif); font-size:40px; margin:0}
-  .porta p{color:var(--muted); font-size:14px; margin:0 auto; max-width:30ch}
+  .porta h1{font-size:38px; margin:0; font-weight:800; letter-spacing:-.03em}
+  .porta p{color:var(--muted); font-size:14px; margin:0 auto; max-width:30ch; font-weight:500}
   .porta .btn{flex:none; max-width:320px; margin:8px auto 0}
   .porta .erro{color:var(--out); font-size:13px}
 
   .toast{
     position:fixed; left:50%; transform:translateX(-50%); z-index:95;
-    bottom:calc(88px + env(safe-area-inset-bottom));
-    background:var(--ink); color:var(--bg); font-size:13px; font-weight:500;
-    padding:10px 16px; border-radius:999px; box-shadow:var(--shadow);
+    bottom:calc(96px + env(safe-area-inset-bottom));
+    background:var(--ink); color:var(--bg); font-size:13px; font-weight:600;
+    padding:11px 18px; border-radius:999px; box-shadow:var(--sombra);
   }
   .toast[hidden]{display:none}
+
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important} }
 </style>
 </head>
 <body>
@@ -435,8 +454,22 @@ function render(){
            Toque no + e cadastre o primeiro — Nubank, PicPay, Itaú, o que você usar.</div>`;
     return;
   }
-  lista.innerHTML = grupos.map(grupo => `
-    <div class="bloco">
+  const detalhe = x => (x.g.desc || 'Sem descrição')
+    + (x.parcelas > 1 ? ' · parcela ' + x.n + ' de ' + x.parcelas : '');
+
+  lista.innerHTML = grupos.map(grupo => {
+    /* Um gasto só no cartão: o cabeçalho e a linha diriam o mesmo valor,
+       ocupando duas alturas para repetir a informação. Vira uma linha. */
+    if(grupo.itens.length === 1){
+      const x = grupo.itens[0];
+      return `<div class="bloco">
+        <button class="item solo" data-id="${esc(x.g.id)}">
+          <span class="desc"><b>${esc(grupo.nome)}</b><small>${esc(detalhe(x))}</small></span>
+          <span class="v num">${esc(brl(x.valor))}</span>
+        </button>
+      </div>`;
+    }
+    return `<div class="bloco">
       <div class="cab">
         <span class="nome">${esc(grupo.nome)}</span>
         <span class="sub num">${esc(brl(grupo.total))}</span>
@@ -449,7 +482,8 @@ function render(){
           </span>
           <span class="v num">${esc(brl(x.valor))}</span>
         </button>`).join('')}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 /* ===================== modal do gasto ===================== */
@@ -735,7 +769,7 @@ const btnTema = document.getElementById('btnTema');
 function aplicarTema(t){
   document.documentElement.dataset.tema = t;
   btnTema.textContent = t === 'escuro' ? '☀' : '🌙';
-  document.querySelector('meta[name=theme-color]').content = t === 'escuro' ? '#17181B' : '#F7F4EE';
+  document.querySelector('meta[name=theme-color]').content = t === 'escuro' ? '#14111C' : '#F4F2FA';
 }
 try{ aplicarTema(localStorage.getItem('tema') || 'escuro'); }catch(e){ aplicarTema('escuro'); }
 btnTema.onclick = ()=>{

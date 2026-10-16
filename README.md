@@ -99,7 +99,7 @@ assim uma publicação nova vale já no primeiro acesso, em vez de só no
 segundo. Mesmo assim, suba a versão em `sw.js` ao publicar:
 
 ```js
-const VERSAO = 'contas-v1';
+const VERSAO = 'contas-v2';
 ```
 
 Backup manual em **⚙ > Baixar backup** — JSON completo, restaurável na
